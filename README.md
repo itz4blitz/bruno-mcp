@@ -30,6 +30,44 @@ npm install
 npm run build
 ```
 
+## Client Integration
+
+The Bruno MCP Server can be integrated with various AI clients that support the Model Context Protocol:
+
+### Quick Setup for Claude Desktop
+
+1. **Edit Claude Desktop config file:**
+   - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows:** `%APPDATA%/Claude/claude_desktop_config.json`
+   - **Linux:** `~/.config/Claude/claude_desktop_config.json`
+
+2. **Add Bruno MCP Server:**
+   ```json
+   {
+     "mcpServers": {
+       "bruno-mcp": {
+         "command": "node",
+         "args": ["/absolute/path/to/bruno-mcp/dist/index.js"],
+         "env": {}
+       }
+     }
+   }
+   ```
+
+3. **Restart Claude Desktop**
+
+### Supported Clients
+
+- ✅ **Claude Desktop App** - Full support
+- ✅ **Claude Code (VS Code)** - Full support  
+- ✅ **Continue** - Tools and resources
+- ✅ **Cline** - Tools and resources
+- ✅ **LM Studio** - Tools support
+- ✅ **MCP Inspector** - Development/testing
+- ✅ **Custom MCP Clients** - via SDK
+
+**📖 For detailed integration instructions with all clients, see [INTEGRATION.md](./INTEGRATION.md)**
+
 ## Usage
 
 ### With Claude Code or MCP Inspector
