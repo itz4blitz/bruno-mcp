@@ -20,7 +20,7 @@ Bruno MCP Server enables you to create, manage, and generate Bruno API testing c
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/macarthy/bruno-mcp.git
 cd bruno-mcp
 
 # Install dependencies

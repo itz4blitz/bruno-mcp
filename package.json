@@ -47,10 +47,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/bruno-mcp.git"
+    "url": "git+https://github.com/macarthy/bruno-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/bruno-mcp/issues"
+    "url": "https://github.com/macarthy/bruno-mcp/issues"
   },
-  "homepage": "https://github.com/yourusername/bruno-mcp#readme"
+  "homepage": "https://github.com/macarthy/bruno-mcp#readme"
 }
