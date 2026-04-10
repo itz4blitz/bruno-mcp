@@ -1,70 +1,92 @@
 # Bruno MCP
 
-`bruno-mcp` is an MCP server for creating and managing Bruno workspaces, collections, folders, requests, environments, and request defaults on disk.
+[![CI](https://github.com/itz4blitz/bruno-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/itz4blitz/bruno-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Node >=20](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![MCP](https://img.shields.io/badge/MCP-workspace--native-7c3aed)](https://modelcontextprotocol.io/)
+[![Bruno](https://img.shields.io/badge/Bruno-classic%20%2B%20workspace-ff6b35)](https://www.usebruno.com/)
 
-It is designed to work with the same files Bruno desktop and Bruno CLI already read rather than trying to automate the desktop app process directly.
+`bruno-mcp` is a workspace-native MCP server for creating, inspecting, and managing Bruno collections on disk.
 
-## What This Fork Is
+It does not try to remote-control the Bruno desktop app. Instead, it works with the same files that Bruno desktop and Bruno CLI already read:
 
-This fork is a workspace-native Bruno automation layer.
+- classic Bruno collections
+- OpenCollection workspaces
+- requests
+- folder defaults
+- collection defaults
+- collection environments
+- workspace/global environments
 
-It now supports two practical jobs:
+If you want a Bruno-aware MCP server that behaves like a real file-native automation layer instead of a one-shot request generator, this is that.
 
-1. Generate runnable Bruno collections and requests.
-2. Manage existing Bruno workspaces and collections in place.
-3. Expose Bruno-native state and workflows through MCP resources and prompts.
+## Why This Exists
 
-That includes:
+Bruno is file-based. That is a feature.
 
-- classic Bruno collections using `bruno.json`, `collection.bru`, `folder.bru`, `*.bru`, and `environments/*.bru`
-- OpenCollection-style Bruno workspace metadata using `workspace.yml`, `opencollection.yml`, `folder.yml`, and `environments/*.yml`
+When an MCP server respects Bruno’s native model, you get:
 
-## Current Capability Areas
+- collections that open correctly in Bruno desktop
+- collections that run correctly through `bru run`
+- workspace-level management without brittle desktop automation
+- reusable defaults at collection and folder scope instead of copy/pasted request logic
+- a safer path to AI-generated API coverage because the model writes to real Bruno structures
+
+This fork is built around that philosophy.
+
+## What It Does
+
+### Generate Bruno assets
 
 - REST request generation
 - GraphQL-over-HTTP request generation
 - binary file upload request generation
-- dependency-aware suite generation with runtime vars
-- collection discovery and stats
+- dependency-aware suite generation using runtime vars
+- CRUD request scaffolding
+
+### Manage Bruno workspaces and collections
+
 - workspace registration via `workspace.yml`
 - workspace environment CRUD
-- collection-level default headers, vars, scripts, and tests
-- folder-level default headers, vars, scripts, and tests
+- collection defaults CRUD
+- folder defaults CRUD
 - request CRUD and movement
-- request metadata parity for assertions, tags, settings, vars, docs, and scripts
 - collection environment CRUD
-- read-only Bruno resources through MCP
-- reusable Bruno prompts with argument completion
-- roots-aware path enforcement for tools, resources, and completions
-- logging and progress signals for long-ish operations
-- safe elicitation for destructive or ambiguous flows
+- collection discovery and stats
 
-## What It Does Not Do
+### Expose richer MCP features
 
-- remote-control the Bruno desktop app process
-- guarantee that every Bruno UI-only behavior is modeled yet
-- support gRPC or WebSocket generation yet
+- tools for deterministic mutation
+- resources for read-only Bruno state inspection
+- prompts for common workflows
+- argument completion for paths and styles
+- roots-aware path enforcement when the client provides roots
+- logging notifications
+- progress notifications
+- safe elicitation for destructive/ambiguous operations
 
-## Why This Exists
+## Status
 
-Bruno is file-based.
+| Area                                                                      | Status                         |
+| ------------------------------------------------------------------------- | ------------------------------ |
+| Classic `.bru` collections                                                | Implemented                    |
+| Workspace / OpenCollection YAML                                           | Implemented                    |
+| Request metadata parity (assertions, tags, settings, docs, vars, scripts) | Implemented                    |
+| Workspace / collection / folder / request / env CRUD                      | Implemented                    |
+| MCP tools                                                                 | Implemented                    |
+| MCP resources                                                             | Implemented                    |
+| MCP prompts                                                               | Implemented                    |
+| MCP completions                                                           | Implemented                    |
+| Roots enforcement                                                         | Implemented                    |
+| Logging / progress                                                        | Implemented                    |
+| Elicitation                                                               | Implemented                    |
+| Tasks                                                                     | Not implemented                |
+| Sampling                                                                  | Not implemented                |
+| gRPC generation                                                           | Not implemented                |
+| WebSocket generation                                                      | Not implemented                |
+| Desktop active-environment persistence                                    | Not implemented / not verified |
 
-That is a strength if your automation layer respects Bruno’s native model:
-
-- workspaces
-- collections
-- folders
-- requests
-- environments
-- collection/folder/request scripts and vars
-
-This fork focuses on operating on those files directly so the result is usable in:
-
-- Bruno desktop
-- Bruno CLI
-- MCP-capable clients like OpenCode, Claude Desktop, and Claude Code
-
-## Supported File Models
+## Supported Bruno Storage Models
 
 ### Classic Bruno
 
@@ -82,11 +104,11 @@ This fork focuses on operating on those files directly so the result is usable i
 - request `*.yml`
 - environment `*.yml`
 
-The server preserves the format already present on disk instead of silently converting files behind your back.
+`bruno-mcp` preserves the format already present on disk instead of silently converting collections behind your back.
 
-## Tool Surface
+## Core Capabilities
 
-### Existing generation tools
+### Mutation tools
 
 - `create_collection`
 - `create_environment`
@@ -96,9 +118,6 @@ The server preserves the format already present on disk instead of silently conv
 - `create_crud_requests`
 - `list_collections`
 - `get_collection_stats`
-
-### Workspace-native tools
-
 - `get_workspace`
 - `add_collection_to_workspace`
 - `remove_collection_from_workspace`
@@ -108,9 +127,6 @@ The server preserves the format already present on disk instead of silently conv
 - `create_workspace_environment`
 - `update_workspace_environment`
 - `delete_workspace_environment`
-
-### Collection / folder default tools
-
 - `get_collection_defaults`
 - `update_collection_defaults`
 - `list_folders`
@@ -118,9 +134,6 @@ The server preserves the format already present on disk instead of silently conv
 - `create_folder`
 - `update_folder_defaults`
 - `delete_folder`
-
-### Request / environment CRUD tools
-
 - `list_requests`
 - `get_request`
 - `update_request`
@@ -131,18 +144,31 @@ The server preserves the format already present on disk instead of silently conv
 - `update_environment_vars`
 - `delete_environment`
 
-### MCP-native discovery
+### Read-only MCP resources
 
-- resources for workspace, collection, request, environment, and server capabilities
-- prompt templates for generating, auditing, and normalizing Bruno collections
-- prompt argument completion for common filesystem and feature inputs
+- `bruno://capabilities`
+- `bruno://workspace/{workspacePath}`
+- `bruno://collection/{collectionPath}`
+- `bruno://request/{requestPath}`
+- `bruno://environment/{collectionPath}/{environmentName}`
 
-### Rich MCP behavior
+These are intended for inspection and model context, not mutation.
 
-- roots-aware filesystem scoping when clients provide roots
-- best-effort server logging via MCP notifications
-- progress notifications for long-ish operations such as request scanning
-- elicitation for safe confirmation on destructive folder deletion flows
+### MCP prompts
+
+- `generate_rest_feature`
+- `audit_bruno_collection`
+- `normalize_bruno_collection`
+
+These prompts support argument completion for common filesystem and workflow values.
+
+## What This Does Not Do
+
+- remote-control the Bruno desktop process
+- promise every possible Bruno UI-only state is modeled on disk
+- support gRPC or WebSocket generation today
+- silently migrate collection formats
+- weaken assertions to match buggy APIs
 
 ## Install
 
@@ -150,55 +176,191 @@ The server preserves the format already present on disk instead of silently conv
 npm install
 ```
 
-## Development
-
-```bash
-npm run dev
-npm run build
-npm run lint
-npm run format
-npm run typecheck
-npm test
-npm run verify
-```
-
 Requirements:
 
 - Node.js `>=20`
 - npm `10`
 
-Linting and formatting use `oxlint` and `oxfmt`.
+## Quick Start
 
-## Running The Server
-
-Source mode:
+### Local development
 
 ```bash
 npm run dev
 ```
 
-Built mode:
+### Build and run
 
 ```bash
 npm run build
 npm start
 ```
 
-Bin entry after install/build:
+### Verify the repo
+
+```bash
+npm run verify
+```
+
+### Local bin
 
 ```bash
 ./node_modules/.bin/bruno-mcp
 ```
 
-## Verification
+## Client Setup
 
-The repo is verified at three levels:
+### OpenCode
 
-1. Unit tests for generators and native workspace/default managers.
-2. MCP integration tests against the real stdio server.
-3. Bruno CLI acceptance tests using generated collections.
+Recommended setup is to point OpenCode at the source tree through `tsx`, so new MCP surface changes are picked up without rebuilding.
 
-Run the full gate locally:
+```json
+{
+  "bruno-mcp": {
+    "type": "local",
+    "command": [
+      "/absolute/path/to/bruno-mcp/node_modules/.bin/tsx",
+      "/absolute/path/to/bruno-mcp/src/index.ts"
+    ],
+    "enabled": true
+  }
+}
+```
+
+### Claude Desktop / Claude Code
+
+```json
+{
+  "mcpServers": {
+    "bruno-mcp": {
+      "command": "node",
+      "args": ["/absolute/path/to/bruno-mcp/dist/index.js"],
+      "env": {}
+    }
+  }
+}
+```
+
+After changing the server’s tool/resource/prompt surface, restart the client session.
+
+More setup details live in `docs/CLIENT_SETUP.md`.
+
+## Examples
+
+### Register an existing collection into a workspace
+
+```json
+{
+  "workspacePath": "/workspace",
+  "collectionPath": "/workspace/collections/branch",
+  "name": "Branch"
+}
+```
+
+### Set collection defaults
+
+```json
+{
+  "collectionPath": "/workspace/collections/branch",
+  "headers": {
+    "Accept": "application/json"
+  },
+  "preRequestVars": {
+    "tenantId": 85
+  },
+  "preRequestScript": "await bru.runRequest('Auth/login')"
+}
+```
+
+### Create a request with tags, settings, assertions, docs, and tests
+
+```json
+{
+  "collectionPath": "/workspace/collections/branch",
+  "folder": "users",
+  "name": "List Users",
+  "method": "GET",
+  "url": "{{baseUrl}}/users",
+  "tags": ["users", "list"],
+  "settings": {
+    "encodeUrl": true
+  },
+  "assertions": [
+    {
+      "name": "res.status",
+      "value": "eq 200"
+    }
+  ],
+  "docs": "Lists users.",
+  "tests": "test('status is 200', function () { expect(res.status).to.equal(200); });"
+}
+```
+
+### Read workspace state as an MCP resource
+
+```text
+bruno://workspace//absolute/path/to/workspace
+```
+
+## Architecture
+
+### Runtime layers
+
+- `src/bruno/store.ts`
+  - format-aware parse/stringify helpers
+  - path resolution helpers
+  - workspace file loading
+- `src/bruno/workspace.ts`
+  - `workspace.yml` and workspace environment management
+- `src/bruno/native.ts`
+  - collection/folder/request/environment management through Bruno-native files
+- `src/server.ts`
+  - MCP tool registrations
+  - resources
+  - prompts
+  - completions
+  - roots/logging/progress/elicitation behavior
+- legacy generator modules
+  - still useful for request generation helpers and acceptance coverage
+
+### Companion skills scaffold
+
+The repo also contains a generic skills package scaffold:
+
+- `packages/skills`
+
+This is for reusable, project-agnostic Bruno generation and audit guidance.
+
+Project-specific semantics belong in project-local overlays, not in this generic repo.
+
+## Testing Philosophy
+
+This project is intentionally opinionated about API testing.
+
+- Passing should mean the product meets the intended contract.
+- Failing should reveal either a real product bug or a real collection bug.
+- The server should help reduce duplication, not hide defects.
+
+That means:
+
+- no fake passing
+- no weakening assertions to match known bugs
+- no normalizing bad product behavior into “expected” behavior
+- prefer collection/folder defaults over repeated request-level setup
+
+## Quality Gates
+
+The repo is verified with:
+
+1. unit tests
+2. MCP integration tests
+3. Bruno CLI acceptance tests
+4. typecheck
+5. lint
+6. format check
+7. build
+
+Run everything locally with:
 
 ```bash
 npm run verify
@@ -212,7 +374,17 @@ npm run verify
 - `docs/CLIENT_SETUP.md`
 - `packages/skills/README.md`
 
-## Notes
+## Roadmap
 
-- This fork now manages both request generation and workspace-native Bruno metadata.
-- The intended long-term direction is to reduce per-request duplication by relying more on collection/folder defaults and workspace-level setup conventions.
+High-value next steps that are not blockers for current use:
+
+- deeper resources and prompt workflows
+- task-backed long-running operations
+- optional sampling-based planning/auditing
+- gRPC generation
+- WebSocket generation
+- verified desktop active-environment persistence if Bruno’s on-disk model is proven
+
+## License
+
+MIT
