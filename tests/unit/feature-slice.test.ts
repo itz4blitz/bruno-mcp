@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { createCollectionManager } from '../../src/bruno/collection.js';
+import { createOpenApiContractManager } from '../../src/bruno/openapi.js';
 import { createFeatureSliceManager } from '../../src/bruno/feature-slice.js';
 import { createBrunoNativeManager } from '../../src/bruno/native.js';
 import { createRequestBuilder } from '../../src/bruno/request.js';
@@ -97,6 +98,69 @@ test('FeatureSliceManager plans and scaffolds a strict feature slice', async () 
   })) as { collectionDefects: unknown[]; coverageGaps: unknown[] };
   assert.deepEqual(audit.coverageGaps, []);
   assert.deepEqual(audit.collectionDefects, []);
+});
+
+test('FeatureSliceManager plans controller-aware Branch slice from OpenAPI contract', async () => {
+  const rootPath = await mkdtemp(join(tmpdir(), 'bruno-mcp-branch-contract-'));
+  const collectionManager = createCollectionManager();
+  const nativeManager = createBrunoNativeManager();
+  const requestBuilder = createRequestBuilder();
+  const workspaceManager = createWorkspaceManager();
+  const openApiManager = createOpenApiContractManager();
+  const featureSliceManager = createFeatureSliceManager(
+    nativeManager,
+    requestBuilder,
+    workspaceManager,
+  );
+
+  const collectionResult = await collectionManager.createCollection({
+    name: 'branch-api',
+    outputPath: rootPath,
+  });
+  assert.equal(collectionResult.success, true);
+
+  const fixturePath = join(process.cwd(), 'tests', 'fixtures', 'contracts', 'branch', 'openapi.json');
+  const contracts = await openApiManager.ingestFile(fixturePath);
+  const branchContract = contracts.find((contract) => contract.controllerName === 'Branch');
+  assert.ok(branchContract);
+
+  const collectionPath = join(rootPath, 'branch-api');
+  const plan = await featureSliceManager.planFeatureSlice({
+    collectionPath,
+    controllerContract: branchContract,
+    featureName: 'Branch',
+    featureType: 'resource-crud',
+  });
+
+  assert.equal(plan.basePath, '/branches');
+  assert.equal(plan.sourceOfTruth, fixturePath);
+  assert.ok(plan.coreRequests.some((request) => request.action === 'update'));
+  assert.ok(plan.coreRequests.some((request) => request.action === 'delete'));
+  assert.ok(plan.requiredInputs.includes('branchId'));
+  assert.ok(plan.matrixes[0]?.allowedDeltaPaths.includes('code'));
+
+  const scaffold = await featureSliceManager.scaffoldFeatureSlice({
+    collectionPath,
+    controllerContract: branchContract,
+    featureName: 'Branch',
+    featureType: 'resource-crud',
+  });
+  const runManifest = await featureSliceManager.inspectRunManifest(collectionPath, 'branch');
+  assert.ok(runManifest.steps.some((step) => step.name === 'Update Branch'));
+  const validation = await featureSliceManager.validateRunManifest(collectionPath, 'branch');
+  assert.equal(validation.valid, true);
+  const supportGraph = await featureSliceManager.inspectSupportGraph(collectionPath, 'branch');
+  assert.ok(supportGraph.nodes.some((node) => node.kind === 'support'));
+  assert.ok(supportGraph.edges.some((edge) => edge.kind === 'requires-role'));
+
+  const updateRequestPath = scaffold.createdRequests.find((requestPath) => requestPath.endsWith('/update-branch.bru'));
+  assert.ok(updateRequestPath);
+  const updateRequest = await nativeManager.getRequest(updateRequestPath!);
+  assert.ok(
+    Array.isArray((updateRequest as { assertions?: Array<{ name: string }> }).assertions) &&
+      ((updateRequest as { assertions: Array<{ name: string }> }).assertions.some((assertion) => assertion.name === 'res.body.id') ||
+        (updateRequest as { assertions: Array<{ name: string }> }).assertions.some((assertion) => assertion.name === 'res.status')),
+  );
 });
 
 test('FeatureSliceManager rejects invalid strict matrix rows', async () => {

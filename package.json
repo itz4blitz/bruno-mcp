@@ -34,6 +34,7 @@
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist coverage",
     "dev": "tsx src/index.ts",
+    "engine:http": "tsx src/index.ts --engine-http",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint . --deny-warnings",

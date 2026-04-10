@@ -1,10 +1,16 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 
 import { faker } from '@faker-js/faker';
 
+import {
+  ControllerContract,
+  ControllerOperationContract,
+  ControllerSchemaField,
+} from './controller-contract.js';
 import { BrunoNativeManager, RequestUpdatePatch } from './native.js';
 import { RequestBuilder } from './request.js';
 import { WorkspaceManager } from './workspace.js';
@@ -176,6 +182,7 @@ export interface FeatureSlicePlan {
   collectionPath: string;
   convenienceMode: boolean;
   coreRequests: CoreRequestSpec[];
+  controllerContract?: ControllerContract;
   featureName: string;
   featureType: FeatureSliceType;
   findings: SliceFinding[];
@@ -207,6 +214,7 @@ export interface SliceManifest {
   runManifestPath?: string;
   sliceId: string;
   sourceOfTruth?: string;
+  supportGraph?: FeatureSliceSupportGraph;
   strictMode: boolean;
   updatedAt: string;
 }
@@ -228,10 +236,20 @@ export type FeatureRunProfile =
   | 'support_only';
 
 export interface FeatureRunStep {
+  order: number;
   cleanupPolicyStatus?: CleanupTruthStatus;
   continueOnFailure: boolean;
   dataFilePath?: string;
   env?: string;
+  expected?: {
+    outcome?: string;
+    statusCodes: number[];
+  };
+  failurePolicy?: {
+    classifyAs: 'cleanup' | 'product' | 'setup';
+    continueOnFailure: boolean;
+    stopOnFailure: boolean;
+  };
   id: string;
   name: string;
   phase: FeatureRunPhase;
@@ -265,6 +283,7 @@ export interface FeatureRunStepResult {
   durationMs: number;
   error?: string;
   exitCode: number;
+  failureReason?: FeatureRunFailureReason;
   name: string;
   passed: boolean;
   phase: FeatureRunPhase;
@@ -273,18 +292,166 @@ export interface FeatureRunStepResult {
   stdout: string;
 }
 
+export type FeatureRunFailureReasonCode =
+  | 'assertion_failure'
+  | 'bruno_request_error'
+  | 'bruno_summary_failure'
+  | 'missing_data_file'
+  | 'missing_request_file'
+  | 'post_response_script_error'
+  | 'post_response_test_failure'
+  | 'pre_request_script_error'
+  | 'pre_request_test_failure'
+  | 'request_status_error'
+  | 'unexpected_http_status'
+  | 'unknown_failure';
+
+export type FeatureRunFailureSource =
+  | 'assertion'
+  | 'filesystem'
+  | 'post_response'
+  | 'pre_request'
+  | 'request'
+  | 'runner'
+  | 'summary';
+
+export interface FeatureRunFailureReason {
+  actualStatusCode?: number;
+  brunoStatus?: BrunoRequestResult['status'];
+  code: FeatureRunFailureReasonCode;
+  expectedStatusCodes?: number[];
+  message: string;
+  requestName?: string;
+  requestPath?: string;
+  source: FeatureRunFailureSource;
+}
+
+export interface FeatureRunIssue {
+  classification: FeatureRunStepResult['classification'];
+  evidence: string;
+  failureReason: FeatureRunFailureReason;
+  phase: FeatureRunPhase;
+  requestPath: string;
+  title: string;
+}
+
 export interface FeatureRunReport {
-  cleanupOutcomes: Array<{ name: string; outcome: string; requestPath: string }>;
-  collectionDefects: Array<{ evidence: string; title: string }>;
+  cleanupOutcomes: Array<{
+    failureReason?: FeatureRunFailureReason;
+    name: string;
+    outcome: string;
+    requestPath: string;
+  }>;
+  collectionDefects: FeatureRunIssue[];
   env: string;
   exitStatus: 'failed' | 'passed';
   passCount: number;
-  productDefects: Array<{ evidence: string; title: string }>;
+  productDefects: FeatureRunIssue[];
   profile: FeatureRunProfile;
-  setupFailures: Array<{ evidence: string; title: string }>;
+  setupFailures: FeatureRunIssue[];
   sliceId: string;
   stepResults: FeatureRunStepResult[];
   totalSteps: number;
+}
+
+export interface FeatureSliceArtifactBundle {
+  coveragePath: string;
+  findingsPath: string;
+  generatedDataPath: string;
+  manifestPath: string;
+  runManifestPath: string;
+  runReportPath: string;
+  supportGraphPath: string;
+}
+
+export interface FeatureSliceValidationResult {
+  artifacts: FeatureSliceArtifactBundle;
+  audit: Record<string, unknown>;
+  manifestValidation: FeatureRunManifestValidation;
+  valid: boolean;
+}
+
+export interface FeatureSliceSupportNode {
+  folder: string;
+  id: string;
+  kind: 'core' | 'matrix' | 'support';
+  name: string;
+  role?: SupportRequestRole;
+}
+
+export interface FeatureSliceSupportEdge {
+  from: string;
+  kind: 'requires-role' | 'used-by-folder';
+  to: string;
+}
+
+export interface FeatureSliceSupportGraph {
+  edges: FeatureSliceSupportEdge[];
+  nodes: FeatureSliceSupportNode[];
+  sliceId: string;
+}
+
+export interface BrunoTestResult {
+  error?: string;
+  isScriptError?: boolean;
+  name?: string;
+  status?: 'fail' | 'pass';
+}
+
+export interface BrunoAssertionResult {
+  error?: string;
+  name?: string;
+  status?: 'fail' | 'pass';
+}
+
+export interface BrunoRequestResult {
+  assertionResults?: BrunoAssertionResult[];
+  error?: string;
+  iterationIndex?: number;
+  name: string;
+  path: string;
+  postResponseTestResults?: BrunoTestResult[];
+  preRequestTestResults?: BrunoTestResult[];
+  request?: {
+    method?: string;
+    url?: string;
+  };
+  response?: {
+    status?: number | string;
+    statusText?: string | null;
+  };
+  runDuration?: number;
+  status?: 'error' | 'fail' | 'pass' | 'skipped';
+  testResults?: BrunoTestResult[];
+}
+
+export interface BrunoRunSummary {
+  errorRequests?: number;
+  failedAssertions?: number;
+  failedPostResponseTests?: number;
+  failedPreRequestTests?: number;
+  failedRequests?: number;
+  failedTests?: number;
+  passedRequests?: number;
+  skippedRequests?: number;
+  totalAssertions?: number;
+  totalPostResponseTests?: number;
+  totalPreRequestTests?: number;
+  totalRequests?: number;
+  totalTests?: number;
+}
+
+export interface BrunoIterationResult {
+  iterationData?: Record<string, unknown>;
+  iterationIndex: number;
+  results: BrunoRequestResult[];
+  summary: BrunoRunSummary;
+}
+
+export interface FeatureRunManifestValidation {
+  errors: string[];
+  valid: boolean;
+  warnings: string[];
 }
 
 export interface InspectFeatureSliceContextInput {
@@ -298,6 +465,7 @@ export interface PlanFeatureSliceInput {
   basePath?: string;
   collectionPath: string;
   convenienceMode?: boolean;
+  controllerContract?: ControllerContract;
   featureName: string;
   featureType: FeatureSliceType;
   overlay?: string;
@@ -447,9 +615,13 @@ export class FeatureSliceManager {
 
   async planFeatureSlice(input: PlanFeatureSliceInput): Promise<FeatureSlicePlan> {
     const sliceId = slugify(input.featureName);
-    const targetResource = singularize(slugify(input.targetResource || input.featureName));
+    const contract = input.controllerContract;
+    const contractBasePath = contract?.basePath;
+    const targetResource = singularize(slugify(input.targetResource || contract?.controllerName || input.featureName));
     const featureFolderRoot = `Features/${titleCase(input.featureName)}`;
-    const basePath = this.normalizeBasePath(input.basePath || `/${slugify(input.targetResource || input.featureName)}`);
+    const basePath = this.normalizeBasePath(
+      input.basePath || contractBasePath || `/${slugify(input.targetResource || input.featureName)}`,
+    );
     const strictMode = input.strictMode !== false;
     const convenienceMode = Boolean(input.convenienceMode);
     const overlayDetails = this.resolveOverlay(input.overlay, targetResource);
@@ -463,6 +635,7 @@ export class FeatureSliceManager {
       'baseUrl',
       `${targetResource}Id`,
       strictMode ? `${targetResource}AuthToken` : '',
+      ...(contract ? this.getContractRequiredInputs(contract, targetResource) : []),
       ...overlayDetails.requiredInputs,
     ].filter(Boolean));
 
@@ -475,15 +648,24 @@ export class FeatureSliceManager {
       targetResource,
     });
 
-    const coreRequests = this.buildCoreRequests({
-      basePath,
-      featureFolderRoot,
-      input,
-      overlayDetails,
-      targetResource,
-    });
+    const coreRequests = contract
+      ? this.buildCoreRequestsFromContract({
+          contract,
+          featureFolderRoot,
+          input,
+          overlayDetails,
+          targetResource,
+        })
+      : this.buildCoreRequests({
+          basePath,
+          featureFolderRoot,
+          input,
+          overlayDetails,
+          targetResource,
+        });
 
     const matrixes = this.buildDefaultMatrixes({
+      allowedFields: contract ? this.getContractBodyFieldNames(contract) : undefined,
       basePath,
       collectionPath: input.collectionPath,
       featureFolderRoot,
@@ -511,6 +693,7 @@ export class FeatureSliceManager {
       collectionPath: input.collectionPath,
       convenienceMode,
       coreRequests,
+      controllerContract: contract,
       featureName: input.featureName,
       featureType: input.featureType,
       findings: [],
@@ -519,7 +702,7 @@ export class FeatureSliceManager {
       overlayDetails,
       requiredInputs,
       sliceId,
-      sourceOfTruth: input.sourceOfTruth,
+      sourceOfTruth: input.sourceOfTruth || contract?.source.path || contract?.source.title,
       strictMode,
       structure,
       supportRequests,
@@ -615,7 +798,10 @@ export class FeatureSliceManager {
     }
 
     const runManifest = this.buildRunManifest(plan, supportRequestPaths, coreRequestPaths, matrixRequestPaths);
-    const manifest = await this.persistManifest(plan, dynamicData, runManifest);
+    const supportGraph = this.buildSupportGraph(plan);
+    const manifest = await this.persistManifest(plan, dynamicData, runManifest, supportGraph);
+    await this.writeSupportGraphFile(plan.collectionPath, plan.sliceId, supportGraph);
+    await this.writeCoverageFile(plan.collectionPath, plan.sliceId);
     await this.writeFindingsDocument(plan.collectionPath, plan.sliceId, plan.findings);
 
     return {
@@ -950,16 +1136,144 @@ export class FeatureSliceManager {
     return runManifest;
   }
 
+  async inspectRunManifest(collectionPath: string, sliceId: string): Promise<FeatureRunManifest> {
+    const manifest = await this.requireManifest(collectionPath, sliceId);
+    return manifest.runManifest || (await this.generateRunManifest(collectionPath, sliceId));
+  }
+
+  async inspectSupportGraph(collectionPath: string, sliceId: string): Promise<FeatureSliceSupportGraph> {
+    const manifest = await this.requireManifest(collectionPath, sliceId);
+    return manifest.supportGraph || this.buildSupportGraph(manifest.plan);
+  }
+
+  private async writeSupportGraphFile(
+    collectionPath: string,
+    sliceId: string,
+    graph: FeatureSliceSupportGraph,
+  ): Promise<string> {
+    const supportGraphPath = (await this.getArtifactBundle(collectionPath, sliceId)).supportGraphPath;
+    await fs.mkdir(dirname(supportGraphPath), { recursive: true });
+    await fs.writeFile(supportGraphPath, `${JSON.stringify(graph, null, 2)}\n`);
+    return supportGraphPath;
+  }
+
+  private async writeCoverageFile(collectionPath: string, sliceId: string): Promise<string> {
+    const coverage = await this.inspectCoverageSummary(collectionPath, sliceId);
+    const coveragePath = (await this.getArtifactBundle(collectionPath, sliceId)).coveragePath;
+    await fs.mkdir(dirname(coveragePath), { recursive: true });
+    await fs.writeFile(coveragePath, `${JSON.stringify(coverage, null, 2)}\n`);
+    return coveragePath;
+  }
+
+  private async writeRunReportFile(
+    collectionPath: string,
+    sliceId: string,
+    report: FeatureRunReport,
+  ): Promise<string> {
+    const runReportPath = (await this.getArtifactBundle(collectionPath, sliceId)).runReportPath;
+    await fs.mkdir(dirname(runReportPath), { recursive: true });
+    await fs.writeFile(runReportPath, `${JSON.stringify(report, null, 2)}\n`);
+    return runReportPath;
+  }
+
+  async validateRunManifest(collectionPath: string, sliceId: string): Promise<FeatureRunManifestValidation> {
+    const manifest = await this.inspectRunManifest(collectionPath, sliceId);
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    const ids = new Set<string>();
+
+    for (const step of manifest.steps) {
+      if (ids.has(step.id)) {
+        errors.push(`Duplicate step id ${step.id}`);
+      }
+      ids.add(step.id);
+
+      try {
+        await fs.access(step.requestPath);
+      } catch {
+        errors.push(`Missing request path for step ${step.name}: ${step.requestPath}`);
+      }
+
+      if (step.dataFilePath) {
+        try {
+          await fs.access(step.dataFilePath);
+        } catch {
+          errors.push(`Missing data file for step ${step.name}: ${step.dataFilePath}`);
+        }
+      }
+
+      if (!step.expected || step.expected.statusCodes.length === 0) {
+        warnings.push(`Step ${step.name} is missing expected status codes`);
+      }
+    }
+
+    return {
+      errors,
+      valid: errors.length === 0,
+      warnings,
+    };
+  }
+
+  async inspectCoverageSummary(collectionPath: string, sliceId: string): Promise<Record<string, unknown>> {
+    const manifest = await this.requireManifest(collectionPath, sliceId);
+    const requests = (await this.nativeManager.listRequests(collectionPath)) as Array<Record<string, unknown>>;
+    const sliceRequests = requests.filter((request) =>
+      Array.isArray(request.tags) && (request.tags as string[]).includes(sliceId),
+    );
+    return {
+      controllerCoverage: this.getControllerCoverage(sliceRequests),
+      cleanupPolicy: manifest.cleanupPolicy,
+      matrixCount: manifest.matrixes.length,
+      requiredInputs: manifest.plan.requiredInputs,
+      supportCoverage: this.getSupportCoverage(sliceRequests),
+    };
+  }
+
+  async getArtifactBundle(collectionPath: string, sliceId: string): Promise<FeatureSliceArtifactBundle> {
+    const metadataRoot = this.getMetadataRoot(collectionPath, sliceId);
+    return {
+      coveragePath: join(metadataRoot, 'coverage.json'),
+      findingsPath: this.getFindingsPath(collectionPath, sliceId),
+      generatedDataPath: this.getGeneratedDataPath(collectionPath, sliceId),
+      manifestPath: this.getManifestPath(collectionPath, sliceId),
+      runManifestPath: this.getRunManifestPath(collectionPath, sliceId),
+      runReportPath: join(metadataRoot, 'run-report.json'),
+      supportGraphPath: join(metadataRoot, 'support-graph.json'),
+    };
+  }
+
+  async validateFeatureSlice(collectionPath: string, sliceId: string): Promise<FeatureSliceValidationResult> {
+    const [audit, manifestValidation, artifacts] = await Promise.all([
+      this.auditFeatureSlice({ collectionPath, sliceId }),
+      this.validateRunManifest(collectionPath, sliceId),
+      this.getArtifactBundle(collectionPath, sliceId),
+    ]);
+    return {
+      artifacts,
+      audit,
+      manifestValidation,
+      valid:
+        manifestValidation.valid &&
+        Array.isArray((audit as { collectionDefects?: unknown[] }).collectionDefects) &&
+        ((audit as { collectionDefects?: unknown[] }).collectionDefects?.length || 0) === 0,
+    };
+  }
+
   async runFeatureSlice(input: RunFeatureSliceInput): Promise<FeatureRunReport> {
     const manifest = await this.requireManifest(input.collectionPath, input.sliceId);
     const runManifest = manifest.runManifest || (await this.generateRunManifest(input.collectionPath, input.sliceId));
     const profile = input.profile || 'full';
     const steps = runManifest.steps.filter((step) => step.profileMembership.includes(profile));
     const stepResults: FeatureRunStepResult[] = [];
-    const collectionDefects: Array<{ evidence: string; title: string }> = [];
-    const productDefects: Array<{ evidence: string; title: string }> = [];
-    const setupFailures: Array<{ evidence: string; title: string }> = [];
-    const cleanupOutcomes: Array<{ name: string; outcome: string; requestPath: string }> = [];
+    const collectionDefects: FeatureRunIssue[] = [];
+    const productDefects: FeatureRunIssue[] = [];
+    const setupFailures: FeatureRunIssue[] = [];
+    const cleanupOutcomes: Array<{
+      failureReason?: FeatureRunFailureReason;
+      name: string;
+      outcome: string;
+      requestPath: string;
+    }> = [];
 
     for (const step of steps) {
       const result = await this.executeRunStep(step, input);
@@ -968,21 +1282,24 @@ export class FeatureSliceManager {
       if (result.passed) {
         if (result.phase === 'cleanup') {
           cleanupOutcomes.push({
+            failureReason: result.failureReason,
             name: result.name,
             outcome: 'passed',
             requestPath: result.requestPath,
           });
         }
       } else {
+        const issue = this.toFeatureRunIssue(result);
         switch (result.classification) {
           case 'collection-defect':
-            collectionDefects.push({ evidence: result.error || result.stderr || result.stdout, title: result.name });
+            collectionDefects.push(issue);
             break;
           case 'setup-failure':
-            setupFailures.push({ evidence: result.error || result.stderr || result.stdout, title: result.name });
+            setupFailures.push(issue);
             break;
           case 'cleanup':
             cleanupOutcomes.push({
+              failureReason: result.failureReason,
               name: result.name,
               outcome: result.error || 'cleanup failed',
               requestPath: result.requestPath,
@@ -990,7 +1307,7 @@ export class FeatureSliceManager {
             break;
           case 'product-defect':
           default:
-            productDefects.push({ evidence: result.error || result.stderr || result.stdout, title: result.name });
+            productDefects.push(issue);
             break;
         }
 
@@ -1001,7 +1318,7 @@ export class FeatureSliceManager {
     }
 
     const passCount = stepResults.filter((result) => result.passed).length;
-    return {
+    const report: FeatureRunReport = {
       cleanupOutcomes,
       collectionDefects,
       env: input.env,
@@ -1017,6 +1334,9 @@ export class FeatureSliceManager {
       stepResults,
       totalSteps: steps.length,
     };
+    await this.writeRunReportFile(input.collectionPath, input.sliceId, report);
+    await this.writeCoverageFile(input.collectionPath, input.sliceId);
+    return report;
   }
 
   async getSliceState(collectionPath: string, sliceId: string): Promise<Record<string, unknown>> {
@@ -1025,6 +1345,7 @@ export class FeatureSliceManager {
     return {
       audit,
       manifest,
+      runManifestValidation: manifest.runManifest ? await this.validateRunManifest(collectionPath, sliceId) : null,
       runManifest: manifest.runManifest || null,
     };
   }
@@ -1452,7 +1773,60 @@ export class FeatureSliceManager {
     ];
   }
 
+  private buildCoreRequestsFromContract(args: {
+    contract: ControllerContract;
+    featureFolderRoot: string;
+    input: PlanFeatureSliceInput;
+    overlayDetails?: OverlayDefinition;
+    targetResource: string;
+  }): CoreRequestSpec[] {
+    const title = titleCase(args.targetResource);
+    const baseTags = [slugify(args.input.featureName), ...(args.overlayDetails?.requestTags || [])];
+
+    return args.contract.operations.map((operation) => {
+      const expectedStatus = this.getExpectedStatusFromContract(operation);
+      const requestBody = operation.requestBody
+        ? {
+            content: JSON.stringify(this.getBasePayloadFromFields(args.targetResource, operation.requestBody.fields), null, 2),
+            type: 'json' as BodyType,
+          }
+        : undefined;
+      const category = this.getCategoryFromAction(operation.action);
+      return {
+        action: operation.action === 'custom' ? 'list' : operation.action,
+        authStrategy: operation.authRequired ? 'explicit-support-var' : 'none',
+        body: requestBody,
+        category,
+        description: operation.summary || `${title} ${operation.action} operation derived from controller contract.`,
+        expectedStatus,
+        folder: this.getFolderForContractAction(args.featureFolderRoot, operation.action),
+        headers: requestBody ? { 'Content-Type': operation.requestBody?.contentType || 'application/json' } : undefined,
+        method: operation.method,
+        name: this.getNameForContractAction(title, operation),
+        postResponseScript: ['create', 'update', 'get'].includes(operation.action)
+          ? this.buildSupportOutputScript(`${args.targetResource}Id`, ['id', 'data.id'])
+          : undefined,
+        requiredSupportRoles: this.getSupportRolesForOperation(operation),
+        tags: [...baseTags, category === 'happy-path' ? 'happy-path' : category, operation.action],
+        url: this.toBrunoUrl(operation.path, args.targetResource),
+      };
+    });
+  }
+
+  private getContractAssertions(operation: ControllerOperationContract): Array<{ name: string; value: string }> {
+    const assertions: Array<{ name: string; value: string }> = [];
+    const successResponse = operation.responses.find((response) => response.statusCode >= 200 && response.statusCode < 300);
+    if (successResponse) {
+      assertions.push({ name: 'res.status', value: `eq ${successResponse.statusCode}` });
+      for (const field of successResponse.bodyFields.filter((entry) => entry.required).slice(0, 5)) {
+        assertions.push({ name: `res.body.${field.name}`, value: 'exists' });
+      }
+    }
+    return assertions;
+  }
+
   private buildDefaultMatrixes(args: {
+    allowedFields?: string[];
     basePath: string;
     collectionPath: string;
     featureFolderRoot: string;
@@ -1460,11 +1834,25 @@ export class FeatureSliceManager {
     strictMode: boolean;
     targetResource: string;
   }): MatrixSpec[] {
-    const basePayload = this.getBasePayload(args.targetResource);
+    const allowedFields = args.allowedFields && args.allowedFields.length > 0 ? args.allowedFields : ['name', 'email', 'description'];
+    const basePayload = this.getBasePayload(args.targetResource, allowedFields);
     const title = titleCase(args.targetResource);
+    const requiredField = allowedFields.includes('name') ? 'name' : allowedFields[0] || 'name';
+    const invalidField = allowedFields.includes('email')
+      ? 'email'
+      : allowedFields.includes('code')
+        ? 'code'
+        : allowedFields[0] || 'name';
+    const invalidValue = invalidField === 'email' ? 'invalid-email' : invalidField === 'code' ? '***' : '';
+    const securityField = allowedFields.includes('name') ? 'name' : allowedFields[0] || 'name';
+    const injectionField = allowedFields.includes('description')
+      ? 'description'
+      : allowedFields.includes('code')
+        ? 'code'
+        : allowedFields[0] || 'name';
     return [
       {
-        allowedDeltaPaths: ['name', 'email', 'description'],
+        allowedDeltaPaths: allowedFields,
         basePayload,
         basePayloadRef: `${args.sliceId}.validation.basePayload`,
         category: 'negative',
@@ -1487,28 +1875,28 @@ export class FeatureSliceManager {
         scenarioKeys: ['caseId', 'scenarioId', 'field', 'value', 'delta', 'expectedStatus', 'expectedOutcome', 'notes', 'tags'],
         scenarios: [
           {
-            caseId: 'missing-name',
-            delta: { removePaths: ['name'] },
+            caseId: `missing-${requiredField}`,
+            delta: { removePaths: [requiredField] },
             expectedOutcome: 'validation_error',
             expectedStatus: 400,
-            scenarioId: 'missing-name',
+            scenarioId: `missing-${requiredField}`,
             tags: ['negative', 'required-field'],
           },
           {
-            caseId: 'invalid-email',
+            caseId: `invalid-${invalidField}`,
             expectedOutcome: 'validation_error',
             expectedStatus: 400,
-            field: 'email',
-            scenarioId: 'invalid-email',
+            field: invalidField,
+            scenarioId: `invalid-${invalidField}`,
             tags: ['negative', 'invalid-format'],
-            value: 'invalid-email',
+            value: invalidValue,
           },
         ],
         strategy: 'base-valid-payload-plus-deltas',
         strict: true,
       },
       {
-        allowedDeltaPaths: ['name', 'email', 'description'],
+        allowedDeltaPaths: allowedFields,
         basePayload,
         basePayloadRef: `${args.sliceId}.security.basePayload`,
         category: 'security',
@@ -1531,20 +1919,20 @@ export class FeatureSliceManager {
         scenarioKeys: ['caseId', 'scenarioId', 'field', 'value', 'delta', 'expectedStatus', 'expectedOutcome', 'notes', 'tags'],
         scenarios: [
           {
-            caseId: 'xss-name',
+            caseId: `xss-${securityField}`,
             expectedOutcome: 'security_rejection',
             expectedStatus: 400,
-            field: 'name',
-            scenarioId: 'xss-name',
+            field: securityField,
+            scenarioId: `xss-${securityField}`,
             tags: ['security', 'xss'],
             value: "<script>alert('xss')</script>",
           },
           {
-            caseId: 'sql-fragment',
+            caseId: `injection-${injectionField}`,
             expectedOutcome: 'security_rejection',
             expectedStatus: 400,
-            field: 'description',
-            scenarioId: 'sql-fragment',
+            field: injectionField,
+            scenarioId: `injection-${injectionField}`,
             tags: ['security', 'sql-injection'],
             value: "' OR 1=1 --",
           },
@@ -1659,8 +2047,14 @@ export class FeatureSliceManager {
     plan: FeatureSlicePlan,
     dynamicData: DynamicDataBundle,
   ): RequestUpdatePatch {
+    const contractAssertions = plan.controllerContract
+      ? this.getContractAssertionsForRequest(plan.controllerContract, request)
+      : [];
     const patch: RequestUpdatePatch = {
-      assertions: [{ name: 'res.status', value: `eq ${request.expectedStatus}` }],
+      assertions:
+        contractAssertions.length > 0
+          ? contractAssertions
+          : [{ name: 'res.status', value: `eq ${request.expectedStatus}` }],
       docs: this.describeCoreRequest(request, plan),
       postResponseScript: request.postResponseScript,
       settings: {
@@ -1712,6 +2106,29 @@ export class FeatureSliceManager {
     }
 
     return patch;
+  }
+
+  private getContractAssertionsForRequest(
+    contract: ControllerContract,
+    request: CoreRequestSpec,
+  ): Array<{ name: string; value: string }> {
+    const operation = contract.operations.find(
+      (entry) => entry.method === request.method && this.getNormalizedOperationAction(entry) === request.action,
+    );
+    return operation ? this.getContractAssertions(operation) : [];
+  }
+
+  private getNormalizedOperationAction(operation: ControllerOperationContract): CoreRequestSpec['action'] {
+    switch (operation.action) {
+      case 'create':
+      case 'delete':
+      case 'get':
+      case 'list':
+      case 'update':
+        return operation.action;
+      default:
+        return 'list';
+    }
   }
 
   private buildDynamicDataPreRequestScript(
@@ -1892,13 +2309,34 @@ export class FeatureSliceManager {
     return value.startsWith('/') ? value : `/${value}`;
   }
 
-  private getBasePayload(resource: string): Record<string, string | number | boolean | null> {
+  private getBasePayload(
+    resource: string,
+    allowedFields: string[] = ['name', 'email', 'description'],
+  ): Record<string, string | number | boolean | null> {
     const prefix = slugify(resource);
-    return {
-      description: `${titleCase(resource)} created by bruno-mcp`,
-      email: `{{${prefix}Email}}`,
-      name: `{{${prefix}Name}}`,
-    };
+    const payload: Record<string, string | number | boolean | null> = {};
+    for (const field of allowedFields) {
+      if (field === 'name') {
+        payload.name = `{{${prefix}Name}}`;
+      } else if (field === 'email') {
+        payload.email = `{{${prefix}Email}}`;
+      } else if (field === 'description') {
+        payload.description = `${titleCase(resource)} created by bruno-mcp`;
+      } else if (field.toLowerCase().includes('code')) {
+        payload[field] = `{{${prefix}Suffix}}`;
+      } else {
+        payload[field] = `${titleCase(resource)} ${field}`;
+      }
+    }
+    return payload;
+  }
+
+  private getBasePayloadFromFields(
+    resource: string,
+    fields: ControllerSchemaField[],
+  ): Record<string, string | number | boolean | null> {
+    const names = fields.map((field) => field.name);
+    return this.getBasePayload(resource, names.length > 0 ? names : undefined);
   }
 
   private generateDynamicData(policy: DynamicDataPolicy = {}): DynamicDataBundle {
@@ -2021,6 +2459,90 @@ export class FeatureSliceManager {
     }
   }
 
+  private getContractRequiredInputs(contract: ControllerContract, targetResource: string): string[] {
+    const values: string[] = [];
+    for (const operation of contract.operations) {
+      for (const parameter of operation.parameters) {
+        if (parameter.in === 'path') {
+          values.push(this.toRuntimeVariableName(parameter.name, targetResource));
+        }
+      }
+    }
+    return dedupe(values);
+  }
+
+  private getContractBodyFieldNames(contract: ControllerContract): string[] {
+    const fields = contract.operations.flatMap((operation) => operation.requestBody?.fields.map((field) => field.name) || []);
+    return dedupe(fields).filter((field) => field.length > 0);
+  }
+
+  private getExpectedStatusFromContract(operation: ControllerOperationContract): number {
+    return operation.responses.find((response) => response.statusCode >= 200 && response.statusCode < 300)?.statusCode || 200;
+  }
+
+  private getCategoryFromAction(action: ControllerOperationContract['action']): CoreRequestSpec['category'] {
+    switch (action) {
+      case 'get':
+      case 'list':
+        return 'read';
+      case 'custom':
+        return 'support';
+      default:
+        return 'happy-path';
+    }
+  }
+
+  private getFolderForContractAction(featureFolderRoot: string, action: ControllerOperationContract['action']): string {
+    switch (action) {
+      case 'get':
+      case 'list':
+        return `${featureFolderRoot}/Read`;
+      default:
+        return `${featureFolderRoot}/Happy Path`;
+    }
+  }
+
+  private getNameForContractAction(title: string, operation: ControllerOperationContract): string {
+    switch (operation.action) {
+      case 'create':
+        return `Create ${title}`;
+      case 'list':
+        return `List ${title.endsWith('s') ? title : `${title}s`}`;
+      case 'get':
+        return `Get ${title}`;
+      case 'update':
+        return `Update ${title}`;
+      case 'delete':
+        return `Delete ${title}`;
+      default:
+        return operation.summary || operation.operationId || `${title} ${titleCase(operation.method.toLowerCase())}`;
+    }
+  }
+
+  private getSupportRolesForOperation(operation: ControllerOperationContract): SupportRequestRole[] {
+    const roles: SupportRequestRole[] = [];
+    if (operation.authRequired) {
+      roles.push('auth');
+    }
+    if (operation.parameters.some((parameter) => parameter.in === 'path')) {
+      roles.push('resolve');
+    }
+    return roles;
+  }
+
+  private toBrunoUrl(path: string, targetResource: string): string {
+    return `{{baseUrl}}${path.replace(/{([^}]+)}/g, (_match, variable) => `{{${this.toRuntimeVariableName(variable, targetResource)}}}`)}`;
+  }
+
+  private toRuntimeVariableName(parameterName: string, targetResource: string): string {
+    const normalizedTarget = slugify(targetResource);
+    const normalizedParameter = slugify(parameterName);
+    if (normalizedParameter.startsWith(normalizedTarget)) {
+      return parameterName;
+    }
+    return `${targetResource}${titleCase(parameterName)}`;
+  }
+
   private async writeRequest(
     collectionPath: string,
     input: {
@@ -2126,6 +2648,7 @@ export class FeatureSliceManager {
     plan: FeatureSlicePlan,
     dynamicData: DynamicDataBundle,
     runManifest: FeatureRunManifest,
+    supportGraph: FeatureSliceSupportGraph,
   ): Promise<string> {
     const now = new Date().toISOString();
     const runManifestPath = await this.writeRunManifest(plan.collectionPath, plan.sliceId, runManifest);
@@ -2145,6 +2668,7 @@ export class FeatureSliceManager {
       runManifestPath,
       sliceId: plan.sliceId,
       sourceOfTruth: plan.sourceOfTruth,
+      supportGraph,
       strictMode: plan.strictMode,
       updatedAt: now,
     };
@@ -2255,6 +2779,77 @@ export class FeatureSliceManager {
     return dedupe(missing);
   }
 
+  private buildSupportGraph(plan: FeatureSlicePlan): FeatureSliceSupportGraph {
+    const nodes: FeatureSliceSupportNode[] = [];
+    const edges: FeatureSliceSupportEdge[] = [];
+
+    for (const support of plan.supportRequests) {
+      const id = `support:${support.role}:${slugify(support.name)}`;
+      nodes.push({
+        folder: support.folder,
+        id,
+        kind: 'support',
+        name: support.name,
+        role: support.role,
+      });
+      for (const usedBy of support.usedBy) {
+        edges.push({
+          from: id,
+          kind: 'used-by-folder',
+          to: usedBy,
+        });
+      }
+    }
+
+    for (const core of plan.coreRequests) {
+      const id = `core:${slugify(core.name)}`;
+      nodes.push({
+        folder: core.folder,
+        id,
+        kind: 'core',
+        name: core.name,
+      });
+      for (const role of core.requiredSupportRoles || []) {
+        const supportNode = plan.supportRequests.find((support) => support.role === role);
+        if (supportNode) {
+          edges.push({
+            from: id,
+            kind: 'requires-role',
+            to: `support:${supportNode.role}:${slugify(supportNode.name)}`,
+          });
+        }
+      }
+    }
+
+    for (const matrix of plan.matrixes) {
+      nodes.push({
+        folder: matrix.requestFolder,
+        id: `matrix:${slugify(matrix.requestName)}`,
+        kind: 'matrix',
+        name: matrix.requestName,
+      });
+    }
+
+    return {
+      edges,
+      nodes,
+      sliceId: plan.sliceId,
+    };
+  }
+
+  private toFeatureRunIssue(result: FeatureRunStepResult): FeatureRunIssue {
+    return {
+      classification: result.classification,
+      evidence: result.error || result.stderr || result.stdout,
+      failureReason:
+        result.failureReason ||
+        ({ code: 'unknown_failure', message: result.error || 'Unknown failure', source: 'runner' } as FeatureRunFailureReason),
+      phase: result.phase,
+      requestPath: result.requestPath,
+      title: result.name,
+    };
+  }
+
   private buildRunManifest(
     plan: FeatureSlicePlan,
     supportRequestPaths: Map<string, string>,
@@ -2274,10 +2869,17 @@ export class FeatureSliceManager {
         if (!requestPath) {
           continue;
         }
-        const phase: FeatureRunPhase = support.role === 'auth' ? 'auth' : support.role === 'cleanup' ? 'cleanup' : 'support';
+      const phase: FeatureRunPhase = support.role === 'auth' ? 'auth' : support.role === 'cleanup' ? 'cleanup' : 'support';
         steps.push({
+          order: order,
           cleanupPolicyStatus: support.role === 'cleanup' ? plan.cleanupPolicy.status : undefined,
           continueOnFailure: support.role === 'cleanup' || support.visibility === 'convenience',
+          expected: { statusCodes: [support.expectedStatus] },
+          failurePolicy: {
+            classifyAs: support.role === 'cleanup' ? 'cleanup' : 'setup',
+            continueOnFailure: support.role === 'cleanup' || support.visibility === 'convenience',
+            stopOnFailure: support.role !== 'cleanup' && support.visibility !== 'convenience',
+          },
           id: `${order++}`,
           name: support.name,
           phase,
@@ -2303,7 +2905,14 @@ export class FeatureSliceManager {
         }
         const phase = this.toRunPhase(core.category);
         steps.push({
+          order: order,
           continueOnFailure: phase === 'negative' || phase === 'security' || phase === 'cleanup',
+          expected: { statusCodes: [core.expectedStatus] },
+          failurePolicy: {
+            classifyAs: phase === 'security' || phase === 'negative' ? 'product' : 'product',
+            continueOnFailure: phase === 'negative' || phase === 'security' || phase === 'cleanup',
+            stopOnFailure: phase === 'happy_path' || phase === 'read',
+          },
           id: `${order++}`,
           name: core.name,
           phase,
@@ -2340,8 +2949,15 @@ export class FeatureSliceManager {
       }
       const phase = matrix.category === 'security' ? 'security' : 'negative';
       steps.push({
+        order: order,
         continueOnFailure: true,
         dataFilePath: entry.dataFilePath,
+        expected: { statusCodes: [400], outcome: matrix.category === 'security' ? 'security_rejection' : 'validation_error' },
+        failurePolicy: {
+          classifyAs: 'product',
+          continueOnFailure: true,
+          stopOnFailure: false,
+        },
         id: `${order++}`,
         name: matrix.requestName,
         phase,
@@ -2450,35 +3066,42 @@ export class FeatureSliceManager {
     const durationMs = Date.now() - startedAt;
     const parsed = await this.readBruJsonReport(reportFilePath);
     const passed = this.isBruReportPassing(parsed, spawned.exitCode);
+    const summary = this.getBruRunSummary(parsed);
+    const failureReason = passed ? undefined : this.determineRunFailureReason(step, parsed);
     return {
-      classification: this.classifyRunStep(step, spawned, parsed),
+      classification: passed ? this.classifyPassedStep(step) : this.classifyFailureReason(step, failureReason),
       dataFilePath: step.dataFilePath,
       durationMs,
-      error: this.extractReportError(parsed) || undefined,
+      error: failureReason?.message || this.extractReportError(parsed) || this.extractPrimaryFailureMessage(parsed) || undefined,
       exitCode: spawned.exitCode,
+      failureReason,
       name: step.name,
       passed,
       phase: step.phase,
       requestPath: step.requestPath,
-      stderr: spawned.stderr,
+      stderr: `${spawned.stderr}${summary ? `\nsummary:${JSON.stringify(summary)}` : ''}`,
       stdout: spawned.stdout,
     };
   }
 
-  private async readBruJsonReport(reportFilePath: string): Promise<unknown[]> {
+  private classifyPassedStep(step: FeatureRunStep): FeatureRunStepResult['classification'] {
+    return step.phase === 'cleanup' ? 'cleanup' : step.phase === 'auth' || step.phase === 'support' ? 'setup-failure' : 'product-defect';
+  }
+
+  private async readBruJsonReport(reportFilePath: string): Promise<BrunoIterationResult[]> {
     try {
       const content = await fs.readFile(reportFilePath, 'utf8');
-      return JSON.parse(content) as unknown[];
+      return JSON.parse(content) as BrunoIterationResult[];
     } catch {
       return [];
     }
   }
 
-  private isBruReportPassing(report: unknown[], exitCode: number): boolean {
+  private isBruReportPassing(report: BrunoIterationResult[], exitCode: number): boolean {
     if (exitCode !== 0) {
       return false;
     }
-    const first = Array.isArray(report) && report.length > 0 ? (report[0] as { summary?: Record<string, number> }) : undefined;
+    const first = Array.isArray(report) && report.length > 0 ? report[0] : undefined;
     const summary = first?.summary || {};
     return (
       Number(summary.failedRequests || 0) === 0 &&
@@ -2488,30 +3111,219 @@ export class FeatureSliceManager {
     );
   }
 
-  private extractReportError(report: unknown[]): string | null {
-    if (!Array.isArray(report) || report.length === 0) {
-      return null;
-    }
-    const entry = report[0] as { results?: Array<{ error?: string }> };
-    return entry.results?.find((result) => typeof result.error === 'string')?.error || null;
+  private getBruRunSummary(report: BrunoIterationResult[]): BrunoRunSummary | null {
+    return report[0]?.summary || null;
   }
 
-  private classifyRunStep(
+  private flattenBruResults(report: BrunoIterationResult[]): BrunoRequestResult[] {
+    return report.flatMap((iteration) => iteration.results || []);
+  }
+
+  private extractReportError(report: BrunoIterationResult[]): string | null {
+    return this.flattenBruResults(report).find((result) => typeof result.error === 'string')?.error || null;
+  }
+
+  private extractPrimaryFailureMessage(report: BrunoIterationResult[]): string | null {
+    for (const result of this.flattenBruResults(report)) {
+      const scriptError = [...(result.preRequestTestResults || []), ...(result.postResponseTestResults || []), ...(result.testResults || [])].find(
+        (entry) => entry.isScriptError || entry.status === 'fail' || typeof entry.error === 'string',
+      );
+      if (scriptError?.error) {
+        return scriptError.error;
+      }
+      const failedAssertion = (result.assertionResults || []).find((entry) => entry.status === 'fail' || typeof entry.error === 'string');
+      if (failedAssertion?.error) {
+        return failedAssertion.error;
+      }
+    }
+    return null;
+  }
+
+  private determineRunFailureReason(
     step: FeatureRunStep,
-    spawned: { exitCode: number; stderr: string; stdout: string },
-    report: unknown[],
+    report: BrunoIterationResult[],
+  ): FeatureRunFailureReason {
+    try {
+      const missingCheck = [{ code: 'missing_request_file', path: step.requestPath }].concat(
+        step.dataFilePath ? [{ code: 'missing_data_file', path: step.dataFilePath }] : [],
+      );
+      for (const item of missingCheck) {
+        const exists = existsSync(item.path);
+        if (!exists) {
+          return {
+            code: item.code as FeatureRunFailureReasonCode,
+            message: `Missing file: ${item.path}`,
+            requestPath: step.requestPath,
+            source: 'filesystem',
+          };
+        }
+      }
+    } catch {
+      // fall through to report-based classification
+    }
+
+    for (const result of this.flattenBruResults(report)) {
+      const preScriptError = (result.preRequestTestResults || []).find((entry) => entry.isScriptError);
+      if (preScriptError?.error) {
+        return {
+          brunoStatus: result.status,
+          code: 'pre_request_script_error',
+          message: preScriptError.error,
+          requestName: result.name,
+          requestPath: result.path,
+          source: 'pre_request',
+        };
+      }
+      const preFailure = (result.preRequestTestResults || []).find((entry) => entry.status === 'fail');
+      if (preFailure?.error || preFailure?.name) {
+        return {
+          brunoStatus: result.status,
+          code: 'pre_request_test_failure',
+          message: preFailure.error || preFailure.name || 'Pre-request test failed',
+          requestName: result.name,
+          requestPath: result.path,
+          source: 'pre_request',
+        };
+      }
+      const assertionFailure = (result.assertionResults || []).find((entry) => entry.status === 'fail' || entry.error);
+      if (assertionFailure) {
+        return {
+          actualStatusCode: this.toNumericStatusCode(result.response?.status),
+          brunoStatus: result.status,
+          code: 'assertion_failure',
+          expectedStatusCodes: step.expected?.statusCodes,
+          message: assertionFailure.error || assertionFailure.name || 'Assertion failed',
+          requestName: result.name,
+          requestPath: result.path,
+          source: 'assertion',
+        };
+      }
+      const postScriptError = (result.postResponseTestResults || []).find((entry) => entry.isScriptError);
+      if (postScriptError?.error) {
+        return {
+          actualStatusCode: this.toNumericStatusCode(result.response?.status),
+          brunoStatus: result.status,
+          code: 'post_response_script_error',
+          message: postScriptError.error,
+          requestName: result.name,
+          requestPath: result.path,
+          source: 'post_response',
+        };
+      }
+      const postFailure = (result.postResponseTestResults || []).find((entry) => entry.status === 'fail');
+      if (postFailure?.error || postFailure?.name) {
+        return {
+          actualStatusCode: this.toNumericStatusCode(result.response?.status),
+          brunoStatus: result.status,
+          code: 'post_response_test_failure',
+          message: postFailure.error || postFailure.name || 'Post-response test failed',
+          requestName: result.name,
+          requestPath: result.path,
+          source: 'post_response',
+        };
+      }
+      const testFailure = (result.testResults || []).find((entry) => entry.status === 'fail' || entry.error);
+      if (testFailure) {
+        return {
+          actualStatusCode: this.toNumericStatusCode(result.response?.status),
+          brunoStatus: result.status,
+          code: testFailure.isScriptError ? 'post_response_script_error' : 'post_response_test_failure',
+          message: testFailure.error || testFailure.name || 'Test failed',
+          requestName: result.name,
+          requestPath: result.path,
+          source: testFailure.isScriptError ? 'post_response' : 'post_response',
+        };
+      }
+      if (result.error) {
+        return {
+          actualStatusCode: this.toNumericStatusCode(result.response?.status),
+          brunoStatus: result.status,
+          code: 'bruno_request_error',
+          message: result.error,
+          requestName: result.name,
+          requestPath: result.path,
+          source: 'request',
+        };
+      }
+      const actualStatus = this.toNumericStatusCode(result.response?.status);
+      if (
+        typeof actualStatus === 'number' &&
+        step.expected?.statusCodes &&
+        step.expected.statusCodes.length > 0 &&
+        !step.expected.statusCodes.includes(actualStatus)
+      ) {
+        return {
+          actualStatusCode: actualStatus,
+          brunoStatus: result.status,
+          code: 'unexpected_http_status',
+          expectedStatusCodes: step.expected.statusCodes,
+          message: `Expected status ${step.expected.statusCodes.join(', ')} but received ${actualStatus}`,
+          requestName: result.name,
+          requestPath: result.path,
+          source: 'request',
+        };
+      }
+      if (result.status === 'error' || result.status === 'fail') {
+        return {
+          actualStatusCode: actualStatus,
+          brunoStatus: result.status,
+          code: 'request_status_error',
+          expectedStatusCodes: step.expected?.statusCodes,
+          message: `Request ended with Bruno status ${result.status}`,
+          requestName: result.name,
+          requestPath: result.path,
+          source: 'request',
+        };
+      }
+    }
+
+    const summary = this.getBruRunSummary(report);
+    if (summary && ((summary.failedRequests || 0) > 0 || (summary.errorRequests || 0) > 0 || (summary.failedAssertions || 0) > 0 || (summary.failedTests || 0) > 0)) {
+      return {
+        code: 'bruno_summary_failure',
+        expectedStatusCodes: step.expected?.statusCodes,
+        message: 'Bruno summary reported failures',
+        requestPath: step.requestPath,
+        source: 'summary',
+      };
+    }
+
+    return {
+      code: 'unknown_failure',
+      expectedStatusCodes: step.expected?.statusCodes,
+      message: 'Unknown failure',
+      requestPath: step.requestPath,
+      source: 'runner',
+    };
+  }
+
+  private classifyFailureReason(
+    step: FeatureRunStep,
+    reason?: FeatureRunFailureReason,
   ): FeatureRunStepResult['classification'] {
     if (step.phase === 'cleanup') {
       return 'cleanup';
     }
-    const combined = `${spawned.stderr}\n${spawned.stdout}\n${this.extractReportError(report) || ''}`.toLowerCase();
-    if (combined.includes('enoent') || combined.includes('cannot find') || combined.includes('syntaxerror') || combined.includes('referenceerror')) {
+    if (!reason) {
+      return step.phase === 'auth' || step.phase === 'support' ? 'setup-failure' : 'product-defect';
+    }
+    if (['missing_request_file', 'missing_data_file', 'post_response_script_error'].includes(reason.code)) {
       return 'collection-defect';
     }
-    if (step.phase === 'auth' || step.phase === 'support') {
+    if (['pre_request_script_error', 'pre_request_test_failure'].includes(reason.code) || step.phase === 'auth' || step.phase === 'support') {
       return 'setup-failure';
     }
     return 'product-defect';
+  }
+
+  private toNumericStatusCode(status: number | string | undefined): number | undefined {
+    if (typeof status === 'number') {
+      return status;
+    }
+    if (typeof status === 'string' && /^\d+$/.test(status)) {
+      return Number(status);
+    }
+    return undefined;
   }
 }
 

@@ -1,0 +1,147 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Branch API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/branches": {
+      "get": {
+        "tags": ["Branch"],
+        "summary": "List branches",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Listed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Branch" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Branch"],
+        "summary": "Create branch",
+        "operationId": "createBranch",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateBranchRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Branch" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/branches/{branchId}": {
+      "get": {
+        "tags": ["Branch"],
+        "summary": "Get branch",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "branchId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Branch" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Branch"],
+        "summary": "Update branch",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "branchId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateBranchRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Branch" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Branch"],
+        "summary": "Delete branch",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "branchId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Deleted" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Branch": {
+        "type": "object",
+        "required": ["id", "name", "code"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "code": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      },
+      "CreateBranchRequest": {
+        "type": "object",
+        "required": ["name", "code"],
+        "properties": {
+          "name": { "type": "string" },
+          "code": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      },
+      "UpdateBranchRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "code": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
+}

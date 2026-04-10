@@ -10,6 +10,7 @@ This is the current logical tool grouping for `bruno-mcp`.
 - `add_test_script`
 - `create_test_suite`
 - `create_crud_requests`
+- `inspect_controller_contract`
 - `inspect_feature_slice_context`
 - `plan_feature_slice`
 - `scaffold_feature_slice`
@@ -18,6 +19,11 @@ This is the current logical tool grouping for `bruno-mcp`.
 - `audit_feature_slice`
 - `record_slice_findings`
 - `refresh_generated_data`
+- `generate_feature_run_manifest`
+- `inspect_feature_run_manifest`
+- `validate_feature_run_manifest`
+- `inspect_feature_slice_support_graph`
+- `run_feature_slice`
 - `list_collections`
 - `get_collection_stats`
 
@@ -26,12 +32,16 @@ This is the current logical tool grouping for `bruno-mcp`.
 These tools sit above raw request CRUD and actively handhold feature-slice buildout.
 
 - inspect workspace and collection state
+- inspect controller contracts from OpenAPI
 - identify missing Bruno-native coverage
 - propose slice structure and support requests
 - scaffold happy path, read, negative, security, and support flows
 - enforce strict matrix authoring with request-owned base payloads plus scenario deltas only
 - emit separate matrix metadata so required fields and allowed delta paths stay explicit
 - generate truthful findings and cleanup documentation
+- generate, inspect, and validate automation run manifests
+- expose support/setup dependency graphs for slice inspection
+- run the slice end to end and classify failures more explicitly
 - treat project overlays as overlay logic instead of generic Bruno mechanics
 
 ## Workspace
@@ -102,6 +112,8 @@ Current resources include:
 - `bruno://request/{requestPath}`
 - `bruno://environment/{collectionPath}/{environmentName}`
 - `bruno://slice/{collectionPath}/{sliceId}`
+- `bruno://slice-run-manifest/{collectionPath}/{sliceId}`
+- `bruno://slice-support-graph/{collectionPath}/{sliceId}`
 
 These resources are intended for discovery, inspection, and model context, not mutation.
 

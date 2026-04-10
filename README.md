@@ -58,6 +58,7 @@ This fork is built around that philosophy.
 
 - tools for deterministic mutation
 - feature-slice planning, scaffolding, auditing, and findings capture
+- OpenAPI/controller contract inspection for controller-aware slice planning
 - strict matrix scaffolding with request-owned base payloads and scenario-delta files
 - explicit support request scaffolding with visible auth/seed/resolve/lookup/cleanup helpers
 - project overlay support for product-specific semantics such as raw/DTO behavior
@@ -121,6 +122,7 @@ This fork is built around that philosophy.
 - `create_test_suite`
 - `create_crud_requests`
 - `inspect_feature_slice_context`
+- `inspect_controller_contract`
 - `plan_feature_slice`
 - `scaffold_feature_slice`
 - `scaffold_matrix_request`
@@ -128,6 +130,11 @@ This fork is built around that philosophy.
 - `audit_feature_slice`
 - `record_slice_findings`
 - `refresh_generated_data`
+- `generate_feature_run_manifest`
+- `inspect_feature_run_manifest`
+- `validate_feature_run_manifest`
+- `inspect_feature_slice_support_graph`
+- `run_feature_slice`
 - `list_collections`
 - `get_collection_stats`
 - `get_workspace`
@@ -164,6 +171,8 @@ This fork is built around that philosophy.
 - `bruno://request/{requestPath}`
 - `bruno://environment/{collectionPath}/{environmentName}`
 - `bruno://slice/{collectionPath}/{sliceId}`
+- `bruno://slice-run-manifest/{collectionPath}/{sliceId}`
+- `bruno://slice-support-graph/{collectionPath}/{sliceId}`
 
 These are intended for inspection and model context, not mutation.
 
@@ -185,6 +194,7 @@ These prompts support argument completion for common filesystem and workflow val
 - project-specific semantics belong in overlays instead of generic Bruno logic
 
 See `docs/FEATURE_SLICE_AUTOMATION.md` for the automation-ready slice workflow and Branch example.
+See `docs/ENGINE_HTTP_API.md` for the Premier-facing HTTP engine mode.
 
 ## What This Does Not Do
 

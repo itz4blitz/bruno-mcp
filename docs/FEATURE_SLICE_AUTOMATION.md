@@ -5,11 +5,12 @@
 ## Recommended Flow
 
 1. Inspect the current slice context with `inspect_feature_slice_context`
-2. Plan the slice with `plan_feature_slice`
-3. Scaffold support, core, matrix, docs, defaults, and metadata with `scaffold_feature_slice`
-4. Generate or refresh ordered execution metadata with `generate_feature_run_manifest`
-5. Run the slice with `run_feature_slice`
-6. Persist findings with `record_slice_findings`
+2. Inspect the controller contract with `inspect_controller_contract` when an OpenAPI spec exists
+3. Plan the slice with `plan_feature_slice`
+4. Scaffold support, core, matrix, docs, defaults, and metadata with `scaffold_feature_slice`
+5. Generate or refresh ordered execution metadata with `generate_feature_run_manifest`
+6. Run the slice with `run_feature_slice`
+7. Persist findings with `record_slice_findings`
 
 ## Branch Example
 
@@ -31,6 +32,7 @@ Suggested structure:
 Automation expectations:
 
 - core controller coverage should include create, list, get, update, and delete
+- if an OpenAPI contract exists, use it as the controller source of truth for action and payload inference
 - support requests should remain explicit and support-only
 - matrix requests should use request-owned base payloads plus scenario delta rows
 - cleanup must be documented as possible, conditional, best-effort, impossible, or none

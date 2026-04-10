@@ -6,10 +6,28 @@
  */
 
 import { createBrunoMcpServer } from './server.js';
+import { createEngineHttpServer } from './engine-http/server.js';
 
 async function main() {
   try {
-    // Create and start the Bruno MCP server
+    if (process.argv.includes('--engine-http')) {
+      const token = process.env.ENGINE_HTTP_TOKEN;
+      const host = process.env.ENGINE_HTTP_HOST || '127.0.0.1';
+      const port = Number(process.env.ENGINE_HTTP_PORT || '9000');
+      const server = createEngineHttpServer({ host, port, token });
+      const address = await server.start();
+      console.error(`Bruno engine HTTP server listening on http://${address.host}:${address.port}`);
+
+      process.on('SIGINT', () => {
+        void server.stop().finally(() => process.exit(0));
+      });
+
+      process.on('SIGTERM', () => {
+        void server.stop().finally(() => process.exit(0));
+      });
+      return;
+    }
+
     const server = createBrunoMcpServer();
     await server.start();
 
@@ -38,9 +56,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export { createBrunoMcpServer } from './server.js';
+export { createEngineHttpServer } from './engine-http/server.js';
 export * from './bruno/types.js';
 export * from './bruno/generator.js';
 export * from './bruno/collection.js';
 export * from './bruno/environment.js';
+export * from './bruno/controller-contract.js';
 export * from './bruno/feature-slice.js';
+export * from './engine-http/types.js';
+export * from './bruno/openapi.js';
 export * from './bruno/request.js';

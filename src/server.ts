@@ -25,6 +25,7 @@ import {
   SupportRequestRole,
 } from './bruno/feature-slice.js';
 import { createBrunoNativeManager } from './bruno/native.js';
+import { createOpenApiContractManager } from './bruno/openapi.js';
 import { createRequestBuilder } from './bruno/request.js';
 import { createWorkspaceManager } from './bruno/workspace.js';
 import {
@@ -321,8 +322,13 @@ const inspectFeatureSliceToolSchema: ToolSchema = {
   basePath: z.string().optional(),
 };
 
+const inspectControllerContractToolSchema: ToolSchema = {
+  contractPath: z.string().min(1, 'Contract path is required'),
+};
+
 const planFeatureSliceToolSchema: ToolSchema = {
   collectionPath: z.string().min(1, 'Collection path is required'),
+  controllerContractPath: z.string().optional(),
   featureName: z.string().min(1, 'Feature name is required'),
   featureType: z.enum(FEATURE_SLICE_TYPE_VALUES),
   targetResource: z.string().optional(),
@@ -387,6 +393,21 @@ const generateFeatureRunManifestToolSchema: ToolSchema = {
   sliceId: z.string().min(1, 'Slice id is required'),
 };
 
+const inspectFeatureRunManifestToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  sliceId: z.string().min(1, 'Slice id is required'),
+};
+
+const validateFeatureRunManifestToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  sliceId: z.string().min(1, 'Slice id is required'),
+};
+
+const inspectFeatureSliceSupportGraphToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  sliceId: z.string().min(1, 'Slice id is required'),
+};
+
 const runFeatureSliceToolSchema: ToolSchema = {
   collectionPath: z.string().min(1, 'Collection path is required'),
   sliceId: z.string().min(1, 'Slice id is required'),
@@ -401,6 +422,7 @@ export class BrunoMcpServer {
   private collectionManager;
   private featureSliceManager;
   private nativeManager;
+  private openApiContractManager;
   private requestBuilder;
   private workspaceManager;
   private rootCache?: { paths: string[]; timestamp: number };
@@ -430,6 +452,7 @@ export class BrunoMcpServer {
 
     this.collectionManager = createCollectionManager();
     this.nativeManager = createBrunoNativeManager();
+    this.openApiContractManager = createOpenApiContractManager();
     this.requestBuilder = createRequestBuilder();
     this.workspaceManager = createWorkspaceManager();
     this.featureSliceManager = createFeatureSliceManager(
@@ -1445,6 +1468,25 @@ export class BrunoMcpServer {
 
   private setupFeatureSliceTools(): void {
     this.server.registerTool(
+      'inspect_controller_contract',
+      {
+        title: 'Inspect Controller Contract',
+        description: 'Parse an OpenAPI contract and normalize it into controller contracts suitable for feature-slice planning.',
+        inputSchema: inspectControllerContractToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { contractPath: string };
+          await this.assertPathAllowed(args.contractPath, 'Contract path');
+          const result = await this.openApiContractManager.ingestFile(args.contractPath);
+          return this.jsonResult({ contractPath: args.contractPath, controllers: result });
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('inspecting controller contract', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
       'inspect_feature_slice_context',
       {
         title: 'Inspect Feature Slice Context',
@@ -1485,6 +1527,7 @@ export class BrunoMcpServer {
           const args = rawArgs as {
             basePath?: string;
             collectionPath: string;
+            controllerContractPath?: string;
             convenienceMode?: boolean;
             featureName: string;
             featureType: FeatureSliceType;
@@ -1494,7 +1537,13 @@ export class BrunoMcpServer {
             targetResource?: string;
           };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
-          const result = await this.featureSliceManager.planFeatureSlice(args);
+          const controllerContract = args.controllerContractPath
+            ? (await this.loadControllerContract(args.controllerContractPath, args.featureName)) || undefined
+            : undefined;
+          const result = await this.featureSliceManager.planFeatureSlice({
+            ...args,
+            controllerContract,
+          });
           return this.jsonResult(result);
         } catch (error) {
           return this.errorResult(this.getErrorMessage('planning feature slice', error));
@@ -1515,6 +1564,7 @@ export class BrunoMcpServer {
           const args = rawArgs as {
             basePath?: string;
             collectionPath: string;
+            controllerContractPath?: string;
             convenienceMode?: boolean;
             dataPolicy?: DynamicDataPolicy;
             featureName: string;
@@ -1527,7 +1577,13 @@ export class BrunoMcpServer {
             targetResource?: string;
           };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
-          const result = await this.featureSliceManager.scaffoldFeatureSlice(args);
+          const controllerContract = args.controllerContractPath
+            ? (await this.loadControllerContract(args.controllerContractPath, args.featureName)) || undefined
+            : undefined;
+          const result = await this.featureSliceManager.scaffoldFeatureSlice({
+            ...args,
+            controllerContract,
+          });
           return this.jsonResult(result);
         } catch (error) {
           return this.errorResult(this.getErrorMessage('scaffolding feature slice', error));
@@ -1696,6 +1752,63 @@ export class BrunoMcpServer {
     );
 
     this.server.registerTool(
+      'inspect_feature_run_manifest',
+      {
+        title: 'Inspect Feature Run Manifest',
+        description: 'Read the ordered automation manifest for a feature slice.',
+        inputSchema: inspectFeatureRunManifestToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { collectionPath: string; sliceId: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.inspectRunManifest(args.collectionPath, args.sliceId);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('inspecting feature run manifest', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'validate_feature_run_manifest',
+      {
+        title: 'Validate Feature Run Manifest',
+        description: 'Validate that a feature run manifest points at existing request and data files and has stable step metadata.',
+        inputSchema: validateFeatureRunManifestToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { collectionPath: string; sliceId: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.validateRunManifest(args.collectionPath, args.sliceId);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('validating feature run manifest', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'inspect_feature_slice_support_graph',
+      {
+        title: 'Inspect Feature Slice Support Graph',
+        description: 'Read the persisted support/setup dependency graph for a feature slice.',
+        inputSchema: inspectFeatureSliceSupportGraphToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { collectionPath: string; sliceId: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.inspectSupportGraph(args.collectionPath, args.sliceId);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('inspecting feature slice support graph', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
       'run_feature_slice',
       {
         title: 'Run Feature Slice',
@@ -1858,6 +1971,35 @@ export class BrunoMcpServer {
         await this.assertPathAllowed(collectionPath, 'Collection path');
         const manifest = await this.featureSliceManager.generateRunManifest(collectionPath, sliceId);
         return this.jsonResource(uri.toString(), manifest);
+      },
+    );
+
+    this.server.registerResource(
+      'bruno_slice_support_graph',
+      new ResourceTemplate('bruno://slice-support-graph/{+collectionPath}/{sliceId}', {
+        complete: {
+          collectionPath: async (value) => this.completeCollectionPaths(String(value || '')),
+          sliceId: async (value, context) => {
+            const collectionPath = context?.arguments?.collectionPath;
+            if (typeof collectionPath !== 'string' || collectionPath.length === 0) {
+              return [];
+            }
+            return this.completeSliceIds(collectionPath, String(value || ''));
+          },
+        },
+        list: undefined,
+      }),
+      {
+        description: 'Read-only support/setup dependency graph for a feature slice.',
+        mimeType: 'application/json',
+        title: 'Bruno Feature Slice Support Graph',
+      },
+      async (uri, variables) => {
+        const collectionPath = this.getTemplateVariable(variables, 'collectionPath');
+        const sliceId = this.getTemplateVariable(variables, 'sliceId');
+        await this.assertPathAllowed(collectionPath, 'Collection path');
+        const graph = await this.featureSliceManager.inspectSupportGraph(collectionPath, sliceId);
+        return this.jsonResource(uri.toString(), graph);
       },
     );
 
@@ -2431,6 +2573,18 @@ Prefer:
 
   private completeStaticValues(prefix: string, values: string[]): string[] {
     return values.filter((value) => value.toLowerCase().startsWith(prefix.toLowerCase()));
+  }
+
+  private async loadControllerContract(contractPath: string, featureName: string) {
+    await this.assertPathAllowed(contractPath, 'Contract path');
+    const contracts = await this.openApiContractManager.ingestFile(contractPath);
+    const normalizedFeatureName = featureName.toLowerCase();
+    return (
+      contracts.find((contract) => contract.controllerName.toLowerCase() === normalizedFeatureName) ||
+      contracts.find((contract) => contract.controllerName.toLowerCase().includes(normalizedFeatureName)) ||
+      contracts[0] ||
+      null
+    );
   }
 
   private async completeFilesystemPaths(

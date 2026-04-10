@@ -15,6 +15,7 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
   });
 
   const tools = await session.client.listTools();
+  assert.ok(tools.tools.some((tool) => tool.name === 'inspect_controller_contract'));
   assert.ok(tools.tools.some((tool) => tool.name === 'plan_feature_slice'));
   assert.ok(tools.tools.some((tool) => tool.name === 'scaffold_feature_slice'));
   assert.ok(tools.tools.some((tool) => tool.name === 'audit_feature_slice'));
@@ -26,6 +27,7 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
   assert.match(collectionText, /Created Bruno collection/);
 
   const collectionPath = join(rootPath, 'feature-api');
+  const branchContractPath = join(process.cwd(), 'tests', 'fixtures', 'contracts', 'branch', 'openapi.json');
   const server = await createTestServer();
   t.after(async () => {
     await server.close();
@@ -40,6 +42,13 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
       username: 'demo',
     },
   });
+
+  const branchContracts = JSON.parse(
+    await callToolText(session.client, 'inspect_controller_contract', {
+      contractPath: branchContractPath,
+    }),
+  ) as { controllers: Array<{ controllerName: string; operations: unknown[] }> };
+  assert.ok(branchContracts.controllers.some((controller) => controller.controllerName === 'Branch'));
 
   const plan = JSON.parse(
     await callToolText(session.client, 'plan_feature_slice', {
@@ -133,6 +142,34 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
   assert.ok(runManifest.steps.some((step) => step.phase === 'auth'));
   assert.ok(runManifest.steps.some((step) => step.phase === 'negative' && step.dataFilePath));
 
+  const inspectedRunManifest = JSON.parse(
+    await callToolText(session.client, 'inspect_feature_run_manifest', {
+      collectionPath,
+      sliceId: 'users',
+    }),
+  ) as { steps: Array<{ expected?: { statusCodes: number[] }; order: number }> };
+  assert.ok(inspectedRunManifest.steps.every((step) => typeof step.order === 'number'));
+  assert.ok(inspectedRunManifest.steps.some((step) => Array.isArray(step.expected?.statusCodes)));
+
+  const runManifestValidation = JSON.parse(
+    await callToolText(session.client, 'validate_feature_run_manifest', {
+      collectionPath,
+      sliceId: 'users',
+    }),
+  ) as { errors: string[]; valid: boolean; warnings: string[] };
+  assert.equal(runManifestValidation.valid, true);
+  assert.deepEqual(runManifestValidation.errors, []);
+  assert.ok(Array.isArray(runManifestValidation.warnings));
+
+  const supportGraph = JSON.parse(
+    await callToolText(session.client, 'inspect_feature_slice_support_graph', {
+      collectionPath,
+      sliceId: 'users',
+    }),
+  ) as { edges: Array<{ kind: string }>; nodes: Array<{ kind: string }> };
+  assert.ok(supportGraph.nodes.some((node) => node.kind === 'support'));
+  assert.ok(supportGraph.edges.some((edge) => edge.kind === 'requires-role'));
+
   const runReport = JSON.parse(
     await callToolText(session.client, 'run_feature_slice', {
       collectionPath,
@@ -160,10 +197,21 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
   const text = resource.contents.find((entry) => 'text' in entry && typeof entry.text === 'string');
   assert.ok(text && 'text' in text);
   const sliceState = JSON.parse(String(text.text)) as {
-    manifest: { overlayDetails: { id: string }; sliceId: string };
+    manifest: { overlayDetails: { id: string }; sliceId: string; supportGraph?: { nodes: unknown[] } };
+    runManifestValidation: { valid: boolean } | null;
   };
   assert.equal(sliceState.manifest.sliceId, 'users');
   assert.equal(sliceState.manifest.overlayDetails.id, 'raw-dto-overlay');
+  assert.ok(Array.isArray(sliceState.manifest.supportGraph?.nodes));
+  assert.equal(sliceState.runManifestValidation?.valid, true);
+
+  const supportGraphResource = await session.client.readResource({
+    uri: `bruno://slice-support-graph/${encodeURIComponent(collectionPath)}/users`,
+  });
+  const supportGraphText = supportGraphResource.contents.find(
+    (entry) => 'text' in entry && typeof entry.text === 'string',
+  );
+  assert.ok(supportGraphText && 'text' in supportGraphText);
 
   const findings = JSON.parse(
     await callToolText(session.client, 'record_slice_findings', {
