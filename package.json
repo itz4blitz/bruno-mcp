@@ -1,7 +1,7 @@
 {
   "name": "bruno-mcp",
   "version": "1.0.0",
-  "description": "MCP server for generating Bruno API testing files",
+  "description": "MCP server for generating and managing Bruno workspaces, collections, requests, and environments",
   "keywords": [
     "api-testing",
     "bru-files",
@@ -10,15 +10,15 @@
     "model-context-protocol",
     "testing"
   ],
-  "homepage": "https://github.com/macarthy/bruno-mcp#readme",
+  "homepage": "https://github.com/itz4blitz/bruno-mcp#readme",
   "bugs": {
-    "url": "https://github.com/macarthy/bruno-mcp/issues"
+    "url": "https://github.com/itz4blitz/bruno-mcp/issues"
   },
   "license": "MIT",
-  "author": "Your Name",
+  "author": "Blitz",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/macarthy/bruno-mcp.git"
+    "url": "git+https://github.com/itz4blitz/bruno-mcp.git"
   },
   "bin": {
     "bruno-mcp": "./dist/index.js"
@@ -49,6 +49,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@usebruno/filestore": "0.8.1",
+    "yaml": "2.8.3",
     "zod": "3.25.76"
   },
   "devDependencies": {

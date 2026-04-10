@@ -1,41 +1,128 @@
-# Bruno MCP Server
+# Bruno MCP
 
-`bruno-mcp` is an MCP server for generating Bruno collections, environments, and request files, with verified REST, GraphQL-over-HTTP, binary upload, and dependency-aware suite support.
+`bruno-mcp` is an MCP server for creating and managing Bruno workspaces, collections, folders, requests, environments, and request defaults on disk.
 
-It is intentionally scoped to the Bruno features this repo currently proves in CI:
+It is designed to work with the same files Bruno desktop and Bruno CLI already read rather than trying to automate the desktop app process directly.
+
+## What This Fork Is
+
+This fork is a workspace-native Bruno automation layer.
+
+It now supports two practical jobs:
+
+1. Generate runnable Bruno collections and requests.
+2. Manage existing Bruno workspaces and collections in place.
+
+That includes:
+
+- classic Bruno collections using `bruno.json`, `collection.bru`, `folder.bru`, `*.bru`, and `environments/*.bru`
+- OpenCollection-style Bruno workspace metadata using `workspace.yml`, `opencollection.yml`, `folder.yml`, and `environments/*.yml`
+
+## Current Capability Areas
 
 - REST request generation
 - GraphQL-over-HTTP request generation
-- binary file body generation
-- Bruno-compatible environment files
-- request script and test block insertion
-- CRUD request scaffolding
-- dependency-aware suite generation via runtime vars
-- collection discovery and request stats
-- MCP stdio integration tests
-- Bruno CLI acceptance tests using `bru run`
+- binary file upload request generation
+- dependency-aware suite generation with runtime vars
+- collection discovery and stats
+- workspace registration via `workspace.yml`
+- workspace environment CRUD
+- collection-level default headers, vars, scripts, and tests
+- folder-level default headers, vars, scripts, and tests
+- request CRUD and movement
+- collection environment CRUD
 
-## Scope
+## What It Does Not Do
 
-### Supported now
+- remote-control the Bruno desktop app process
+- guarantee that every Bruno UI-only behavior is modeled yet
+- support gRPC or WebSocket generation yet
 
-- HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`
-- Request features: headers, query params, folders, sequence numbers
-- Auth: `none`, `bearer`, `basic`, `oauth2`, `api-key`, `digest`
-- Bodies: `none`, `json`, `text`, `xml`, `form-data`, `form-urlencoded`, `binary`, `graphql`
-- Environment vars via `vars {}` files
-- Script blocks: `script:pre-request`, `script:post-response`, `tests`
-- `create_test_suite` with explicit request dependencies and generated `bru.setVar(...)` chaining
+## Why This Exists
 
-### Not supported yet
+Bruno is file-based.
 
-- gRPC
-- WebSocket
+That is a strength if your automation layer respects Bruno’s native model:
 
-## Requirements
+- workspaces
+- collections
+- folders
+- requests
+- environments
+- collection/folder/request scripts and vars
 
-- Node.js `>=20`
-- npm `10`
+This fork focuses on operating on those files directly so the result is usable in:
+
+- Bruno desktop
+- Bruno CLI
+- MCP-capable clients like OpenCode, Claude Desktop, and Claude Code
+
+## Supported File Models
+
+### Classic Bruno
+
+- `bruno.json`
+- `collection.bru`
+- `folder.bru`
+- request `*.bru`
+- environment `*.bru`
+
+### Workspace / OpenCollection
+
+- `workspace.yml`
+- `opencollection.yml`
+- `folder.yml`
+- request `*.yml`
+- environment `*.yml`
+
+The server preserves the format already present on disk instead of silently converting files behind your back.
+
+## Tool Surface
+
+### Existing generation tools
+
+- `create_collection`
+- `create_environment`
+- `create_request`
+- `add_test_script`
+- `create_test_suite`
+- `create_crud_requests`
+- `list_collections`
+- `get_collection_stats`
+
+### Workspace-native tools
+
+- `get_workspace`
+- `add_collection_to_workspace`
+- `remove_collection_from_workspace`
+- `validate_workspace`
+- `list_workspace_environments`
+- `get_workspace_environment`
+- `create_workspace_environment`
+- `update_workspace_environment`
+- `delete_workspace_environment`
+
+### Collection / folder default tools
+
+- `get_collection_defaults`
+- `update_collection_defaults`
+- `list_folders`
+- `get_folder`
+- `create_folder`
+- `update_folder_defaults`
+- `delete_folder`
+
+### Request / environment CRUD tools
+
+- `list_requests`
+- `get_request`
+- `update_request`
+- `move_request`
+- `delete_request`
+- `list_environments`
+- `get_environment`
+- `update_environment_vars`
+- `delete_environment`
 
 ## Install
 
@@ -43,7 +130,7 @@ It is intentionally scoped to the Bruno features this repo currently proves in C
 npm install
 ```
 
-## Scripts
+## Development
 
 ```bash
 npm run dev
@@ -55,140 +142,41 @@ npm test
 npm run verify
 ```
 
+Requirements:
+
+- Node.js `>=20`
+- npm `10`
+
 Linting and formatting use `oxlint` and `oxfmt`.
 
-## MCP Usage
+## Running The Server
 
-Start the server locally:
+Source mode:
 
 ```bash
 npm run dev
 ```
 
-Or run the built server:
+Built mode:
 
 ```bash
 npm run build
 npm start
 ```
 
-The package also exposes a bin entry after install/build:
+Bin entry after install/build:
 
 ```bash
 ./node_modules/.bin/bruno-mcp
 ```
 
-## Available Tools
-
-- `create_collection`
-- `create_environment`
-- `create_request`
-- `add_test_script`
-- `create_test_suite`
-- `create_crud_requests`
-- `list_collections`
-- `get_collection_stats`
-
-## Example
-
-REST request:
-
-```json
-{
-  "collectionPath": "./collections/sample-api",
-  "name": "Get User",
-  "method": "GET",
-  "url": "{{baseUrl}}/users/{{id}}",
-  "headers": {
-    "Accept": "application/json"
-  },
-  "auth": {
-    "type": "bearer",
-    "config": {
-      "token": "{{token}}"
-    }
-  }
-}
-```
-
-GraphQL request:
-
-```json
-{
-  "collectionPath": "./collections/graphql-api",
-  "name": "List Users",
-  "method": "POST",
-  "url": "{{baseUrl}}/graphql",
-  "headers": {
-    "content-type": "application/json"
-  },
-  "body": {
-    "type": "graphql",
-    "content": "query ListUsers($limit: Int!) {\n  users(limit: $limit) {\n    id\n    name\n  }\n}",
-    "variables": "{\n  \"limit\": 5\n}"
-  }
-}
-```
-
-Binary upload request:
-
-```json
-{
-  "collectionPath": "./collections/upload-api",
-  "name": "Upload Artifact",
-  "method": "POST",
-  "url": "{{baseUrl}}/binary",
-  "body": {
-    "type": "binary",
-    "filePath": "./fixtures/payload.bin",
-    "contentType": "application/octet-stream"
-  }
-}
-```
-
-Dependency-aware suite:
-
-```json
-{
-  "collectionPath": "./collections/shop-api",
-  "suiteName": "widget-flow",
-  "requests": [
-    {
-      "name": "Create Widget",
-      "method": "POST",
-      "url": "{{baseUrl}}/api/widgets",
-      "headers": {
-        "content-type": "application/json"
-      },
-      "body": {
-        "type": "json",
-        "content": "{\n  \"name\": \"Widget\"\n}"
-      }
-    },
-    {
-      "name": "Fetch Widget",
-      "method": "GET",
-      "url": "{{baseUrl}}/api/widgets/{{widgetId}}"
-    }
-  ],
-  "dependencies": [
-    {
-      "from": "Create Widget",
-      "to": "Fetch Widget",
-      "variable": "widgetId",
-      "sourcePath": "id"
-    }
-  ]
-}
-```
-
 ## Verification
 
-The repo now verifies behavior at three levels:
+The repo is verified at three levels:
 
-1. Unit tests for BRU generation and collection/request helpers.
+1. Unit tests for generators and native workspace/default managers.
 2. MCP integration tests against the real stdio server.
-3. Bruno CLI acceptance tests that generate collections and run them with `bru run` against local REST, GraphQL, binary upload, and dependency-chain test endpoints.
+3. Bruno CLI acceptance tests using generated collections.
 
 Run the full gate locally:
 
@@ -196,19 +184,14 @@ Run the full gate locally:
 npm run verify
 ```
 
-## CI
+## Documentation
 
-GitHub Actions runs:
-
-- format check
-- lint
-- typecheck
-- unit tests
-- MCP integration tests
-- build
-- Bruno CLI acceptance tests
+- `docs/WORKSPACE_MODEL.md`
+- `docs/MCP_TOOL_REFERENCE.md`
+- `docs/DEVELOPMENT.md`
+- `docs/CLIENT_SETUP.md`
 
 ## Notes
 
-- This repo is a server and generator, not a full Bruno desktop feature mirror.
-- The public scope in this README matches what the code and tests currently support.
+- This fork now manages both request generation and workspace-native Bruno metadata.
+- The intended long-term direction is to reduce per-request duplication by relying more on collection/folder defaults and workspace-level setup conventions.
