@@ -8,6 +8,7 @@ import { completable } from '@modelcontextprotocol/sdk/server/completable.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { promises as fs } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { createCollectionManager } from './bruno/collection.js';
@@ -270,12 +271,30 @@ export class BrunoMcpServer {
   private nativeManager;
   private requestBuilder;
   private workspaceManager;
+  private rootCache?: { paths: string[]; timestamp: number };
 
   constructor() {
-    this.server = new McpServer({
-      name: 'bruno-mcp',
-      version: '1.0.0',
-    });
+    this.server = new McpServer(
+      {
+        name: 'bruno-mcp',
+        version: '1.0.0',
+      },
+      {
+        capabilities: {
+          completions: {},
+          logging: {},
+          prompts: {
+            listChanged: true,
+          },
+          resources: {
+            listChanged: true,
+          },
+          tools: {
+            listChanged: true,
+          },
+        },
+      },
+    );
 
     this.collectionManager = createCollectionManager();
     this.nativeManager = createBrunoNativeManager();
@@ -320,6 +339,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as CreateCollectionInput;
+          await this.assertPathAllowed(args.outputPath, 'Output path');
           const result = await this.collectionManager.createCollection(args);
 
           return result.success
@@ -346,6 +366,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as CreateEnvironmentInput;
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const result = await this.nativeManager.createEnvironment(
             args.collectionPath,
             args.name,
@@ -412,6 +433,8 @@ export class BrunoMcpServer {
             tests?: string;
           };
 
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+
           const result = await this.requestBuilder.createRequest(
             this.toCreateRequestInput({
               auth: args.auth,
@@ -466,6 +489,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as AddTestScriptInput;
+          await this.assertPathAllowed(args.bruFilePath, 'Request path');
           const result = await this.requestBuilder.addTestScript(args);
 
           return result.success
@@ -493,6 +517,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as CreateTestSuiteInput;
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const results = [];
 
           for (const request of this.prepareSuiteRequests(args)) {
@@ -541,6 +566,8 @@ export class BrunoMcpServer {
             folder?: string;
           };
 
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+
           const results = await this.requestBuilder.createCrudRequests(
             args.collectionPath,
             args.entityName,
@@ -582,6 +609,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { path: string };
+          await this.assertPathAllowed(args.path, 'Directory path');
           const collections = await this.collectionManager.listCollections(args.path);
 
           if (collections.length === 0) {
@@ -618,6 +646,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { collectionPath: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const stats = await this.collectionManager.getCollectionStats(args.collectionPath);
 
           const methodLines =
@@ -655,6 +684,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { workspacePath: string };
+          await this.assertPathAllowed(args.workspacePath, 'Workspace path');
           const workspace = await this.workspaceManager.getWorkspaceSummary(args.workspacePath);
           return this.jsonResult(workspace);
         } catch (error) {
@@ -677,6 +707,8 @@ export class BrunoMcpServer {
             collectionPath: string;
             name?: string;
           };
+          await this.assertPathAllowed(args.workspacePath, 'Workspace path');
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const result = await this.workspaceManager.addCollection(
             args.workspacePath,
             args.name || this.basename(args.collectionPath),
@@ -701,6 +733,8 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { workspacePath: string; collectionPath: string };
+          await this.assertPathAllowed(args.workspacePath, 'Workspace path');
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const result = await this.workspaceManager.removeCollection(
             args.workspacePath,
             args.collectionPath,
@@ -726,6 +760,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { workspacePath: string };
+          await this.assertPathAllowed(args.workspacePath, 'Workspace path');
           const validation = await this.workspaceManager.validateWorkspace(args.workspacePath);
           return this.jsonResult(validation);
         } catch (error) {
@@ -744,6 +779,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { workspacePath: string };
+          await this.assertPathAllowed(args.workspacePath, 'Workspace path');
           const environments = await this.workspaceManager.listWorkspaceEnvironments(
             args.workspacePath,
           );
@@ -764,6 +800,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { workspacePath: string; environmentName: string };
+          await this.assertPathAllowed(args.workspacePath, 'Workspace path');
           const environment = await this.workspaceManager.getWorkspaceEnvironment(
             args.workspacePath,
             args.environmentName,
@@ -789,6 +826,7 @@ export class BrunoMcpServer {
             variables?: Record<string, string | number | boolean>;
             workspacePath: string;
           };
+          await this.assertPathAllowed(args.workspacePath, 'Workspace path');
           const result = await this.workspaceManager.createWorkspaceEnvironment(
             args.workspacePath,
             args.environmentName,
@@ -818,6 +856,7 @@ export class BrunoMcpServer {
             unset?: string[];
             workspacePath: string;
           };
+          await this.assertPathAllowed(args.workspacePath, 'Workspace path');
           const result = await this.workspaceManager.updateWorkspaceEnvironment(
             args.workspacePath,
             args.environmentName,
@@ -843,6 +882,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { workspacePath: string; environmentName: string };
+          await this.assertPathAllowed(args.workspacePath, 'Workspace path');
           const result = await this.workspaceManager.deleteWorkspaceEnvironment(
             args.workspacePath,
             args.environmentName,
@@ -868,6 +908,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { collectionPath: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const defaults = await this.nativeManager.getCollectionDefaults(args.collectionPath);
           return this.jsonResult(defaults);
         } catch (error) {
@@ -886,6 +927,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { collectionPath: string } & Record<string, unknown>;
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const result = await this.nativeManager.updateCollectionDefaults(
             args.collectionPath,
             this.toDefaultsPatch(args),
@@ -911,6 +953,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { collectionPath: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const folders = await this.nativeManager.listFolders(args.collectionPath);
           return this.jsonResult({ collectionPath: args.collectionPath, folders });
         } catch (error) {
@@ -929,6 +972,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { collectionPath: string; folderPath: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const folder = await this.nativeManager.getFolderDefaults(
             args.collectionPath,
             args.folderPath,
@@ -953,6 +997,7 @@ export class BrunoMcpServer {
             string,
             unknown
           >;
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const result = await this.nativeManager.createFolder(
             args.collectionPath,
             args.folderPath,
@@ -980,6 +1025,7 @@ export class BrunoMcpServer {
             string,
             unknown
           >;
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const result = await this.nativeManager.updateFolderDefaults(
             args.collectionPath,
             args.folderPath,
@@ -1008,11 +1054,26 @@ export class BrunoMcpServer {
             deleteContents: boolean;
             folderPath: string;
           };
-          const result = await this.nativeManager.deleteFolder(
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          let result = await this.nativeManager.deleteFolder(
             args.collectionPath,
             args.folderPath,
             args.deleteContents,
           );
+
+          if (
+            !result.success &&
+            !args.deleteContents &&
+            result.error?.includes('not empty') &&
+            (await this.confirmRecursiveDelete(args.folderPath))
+          ) {
+            result = await this.nativeManager.deleteFolder(
+              args.collectionPath,
+              args.folderPath,
+              true,
+            );
+          }
+
           return result.success
             ? this.textResult(`Deleted folder ${args.folderPath}`)
             : this.errorResult(`Failed to delete folder: ${result.error}`);
@@ -1031,10 +1092,18 @@ export class BrunoMcpServer {
         description: 'List requests inside a Bruno collection.',
         inputSchema: { collectionPath: z.string().min(1, 'Collection path is required') },
       },
-      async (rawArgs) => {
+      async (rawArgs, extra) => {
         try {
           const args = rawArgs as { collectionPath: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          await this.logMessage('info', 'Listing Bruno requests', {
+            collectionPath: args.collectionPath,
+            operation: 'list_requests',
+            progressToken: extra._meta?.progressToken,
+          });
+          await this.sendProgress(extra, 0, 'Scanning requests');
           const requests = await this.nativeManager.listRequests(args.collectionPath);
+          await this.sendProgress(extra, 1, 'Finished scanning requests');
           return this.jsonResult({ collectionPath: args.collectionPath, requests });
         } catch (error) {
           return this.errorResult(this.getErrorMessage('listing requests', error));
@@ -1052,6 +1121,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { requestPath: string };
+          await this.assertPathAllowed(args.requestPath, 'Request path');
           const request = await this.nativeManager.getRequest(args.requestPath);
           return this.jsonResult(request);
         } catch (error) {
@@ -1070,6 +1140,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { requestPath: string } & Record<string, unknown>;
+          await this.assertPathAllowed(args.requestPath, 'Request path');
           const result = await this.nativeManager.updateRequest(
             args.requestPath,
             this.toRequestPatch(args),
@@ -1098,6 +1169,7 @@ export class BrunoMcpServer {
             sequence?: number;
             targetFolderPath: string;
           };
+          await this.assertPathAllowed(args.requestPath, 'Request path');
           const result = await this.nativeManager.moveRequest(
             args.requestPath,
             args.targetFolderPath,
@@ -1123,6 +1195,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { requestPath: string };
+          await this.assertPathAllowed(args.requestPath, 'Request path');
           const result = await this.nativeManager.deleteRequest(args.requestPath);
           return result.success
             ? this.textResult(`Deleted request ${args.requestPath}`)
@@ -1145,6 +1218,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { collectionPath: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const environments = await this.nativeManager.listEnvironments(args.collectionPath);
           return this.jsonResult({ collectionPath: args.collectionPath, environments });
         } catch (error) {
@@ -1163,6 +1237,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { collectionPath: string; environmentName: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const environment = await this.nativeManager.getEnvironment(
             args.collectionPath,
             args.environmentName,
@@ -1189,6 +1264,7 @@ export class BrunoMcpServer {
             set?: Record<string, string | number | boolean>;
             unset?: string[];
           };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const result = await this.nativeManager.updateEnvironmentVariables(
             args.collectionPath,
             args.environmentName,
@@ -1214,6 +1290,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as { collectionPath: string; environmentName: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const result = await this.nativeManager.deleteEnvironment(
             args.collectionPath,
             args.environmentName,
@@ -1268,6 +1345,7 @@ export class BrunoMcpServer {
       },
       async (uri, variables) => {
         const workspacePath = this.getTemplateVariable(variables, 'workspacePath');
+        await this.assertPathAllowed(workspacePath, 'Workspace path');
         const workspace = await this.workspaceManager.getWorkspaceSummary(workspacePath);
         return this.jsonResource(uri.toString(), workspace);
       },
@@ -1288,6 +1366,7 @@ export class BrunoMcpServer {
       },
       async (uri, variables) => {
         const collectionPath = this.getTemplateVariable(variables, 'collectionPath');
+        await this.assertPathAllowed(collectionPath, 'Collection path');
         const defaults = await this.nativeManager.getCollectionDefaults(collectionPath);
         const folders = await this.nativeManager.listFolders(collectionPath);
         const requests = await this.nativeManager.listRequests(collectionPath);
@@ -1315,6 +1394,7 @@ export class BrunoMcpServer {
       },
       async (uri, variables) => {
         const requestPath = this.getTemplateVariable(variables, 'requestPath');
+        await this.assertPathAllowed(requestPath, 'Request path');
         const request = await this.nativeManager.getRequest(requestPath);
         return this.jsonResource(uri.toString(), request);
       },
@@ -1340,6 +1420,7 @@ export class BrunoMcpServer {
       async (uri, variables) => {
         const collectionPath = this.getTemplateVariable(variables, 'collectionPath');
         const environmentName = this.getTemplateVariable(variables, 'environmentName');
+        await this.assertPathAllowed(collectionPath, 'Collection path');
         const environment = await this.nativeManager.getEnvironment(
           collectionPath,
           environmentName,
@@ -1629,6 +1710,135 @@ Prefer:
       }, 'res.getBody()');
   }
 
+  private async getAllowedRootPaths(): Promise<string[] | undefined> {
+    const now = Date.now();
+    if (this.rootCache && now - this.rootCache.timestamp < 1000) {
+      return this.rootCache.paths;
+    }
+
+    try {
+      const result = await this.server.server.listRoots();
+      const paths = result.roots
+        .map((root) => {
+          try {
+            return fileURLToPath(root.uri);
+          } catch {
+            return undefined;
+          }
+        })
+        .filter((path): path is string => Boolean(path))
+        .map((path) => resolve(path));
+
+      this.rootCache = { paths, timestamp: now };
+      return paths;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async assertPathAllowed(path: string, description: string): Promise<void> {
+    const allowedRoots = await this.getAllowedRootPaths();
+    if (!allowedRoots) {
+      return;
+    }
+
+    const resolvedPath = resolve(path);
+    const isAllowed = allowedRoots.some((rootPath) => {
+      const relativePath = resolve(path).startsWith(rootPath)
+        ? resolvedPath.slice(rootPath.length)
+        : undefined;
+
+      return (
+        resolvedPath === rootPath ||
+        (relativePath !== undefined && (relativePath === '' || relativePath.startsWith('/')))
+      );
+    });
+
+    if (!isAllowed) {
+      throw new Error(`${description} ${resolvedPath} is outside allowed roots`);
+    }
+  }
+
+  private async confirmRecursiveDelete(folderPath: string) {
+    try {
+      const result = await this.server.server.elicitInput({
+        message: `Folder ${folderPath} is not empty. Delete it recursively?`,
+        mode: 'form',
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            deleteContents: {
+              type: 'boolean',
+              title: 'Delete folder contents',
+              description: 'Delete the folder and all nested requests/subfolders.',
+              default: true,
+            },
+          },
+          required: ['deleteContents'],
+        },
+      });
+
+      return result.action === 'accept' && result.content?.deleteContents === true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async logMessage(
+    level: 'alert' | 'critical' | 'debug' | 'emergency' | 'error' | 'info' | 'notice' | 'warning',
+    message: string,
+    data: unknown,
+  ): Promise<void> {
+    try {
+      await this.server.sendLoggingMessage({
+        data: {
+          message,
+          ...(typeof data === 'object' && data ? (data as Record<string, unknown>) : { data }),
+        },
+        level,
+        logger: 'bruno-mcp',
+      });
+    } catch {
+      // Logging is best-effort only.
+    }
+  }
+
+  private async sendProgress(
+    extra: {
+      _meta?: { progressToken?: number | string };
+      sendNotification?: (notification: never) => Promise<void>;
+    },
+    progress: number,
+    message: string,
+    total = 1,
+  ): Promise<void> {
+    const progressToken = extra._meta?.progressToken;
+    if (progressToken === undefined || !extra.sendNotification) {
+      return;
+    }
+
+    await extra.sendNotification({
+      method: 'notifications/progress',
+      params: {
+        message,
+        progress,
+        progressToken,
+        total,
+      },
+    } as never);
+  }
+
+  private async filterPathsByRoots(paths: string[]): Promise<string[]> {
+    const allowedRoots = await this.getAllowedRootPaths();
+    if (!allowedRoots) {
+      return paths;
+    }
+
+    return paths.filter((path) =>
+      allowedRoots.some((rootPath) => path === rootPath || path.startsWith(`${rootPath}/`)),
+    );
+  }
+
   private async completeWorkspacePaths(prefix: string): Promise<string[]> {
     return this.completeFilesystemPaths(prefix, async (candidatePath) =>
       this.pathExists(join(candidatePath, 'workspace.yml')),
@@ -1706,7 +1916,7 @@ Prefer:
         matches.push(candidatePath);
       }
 
-      return matches.toSorted().slice(0, 50);
+      return (await this.filterPathsByRoots(matches)).toSorted().slice(0, 50);
     } catch {
       return [];
     }

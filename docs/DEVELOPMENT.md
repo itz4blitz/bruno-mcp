@@ -38,6 +38,9 @@ Validates:
 - end-to-end MCP tool invocation
 - workspace and native CRUD tools
 - resources, prompts, and prompt completion
+- roots enforcement
+- elicitation-backed destructive flow confirmation
+- logging and progress notifications
 
 ### Acceptance
 

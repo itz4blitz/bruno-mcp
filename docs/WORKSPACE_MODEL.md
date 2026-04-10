@@ -74,6 +74,7 @@ Workspace support in this fork currently includes:
 - listing and managing workspace-level environments
 - exposing workspace and collection state as MCP resources
 - exposing reusable generation/audit workflows as MCP prompts
+- honoring client roots when available for safer path-scoped automation
 
 The workspace root remains intentionally small and explicit.
 
@@ -84,3 +85,4 @@ The workspace root remains intentionally small and explicit.
 - no WebSocket generation
 - mixed-format workspaces may still require deliberate refactoring for best UX
 - desktop-active environment selection persistence is not yet a documented/verified feature of this server
+- server-side tasks and sampling are not first-class product features yet

@@ -35,6 +35,9 @@ That includes:
 - collection environment CRUD
 - read-only Bruno resources through MCP
 - reusable Bruno prompts with argument completion
+- roots-aware path enforcement for tools, resources, and completions
+- logging and progress signals for long-ish operations
+- safe elicitation for destructive or ambiguous flows
 
 ## What It Does Not Do
 
@@ -133,6 +136,13 @@ The server preserves the format already present on disk instead of silently conv
 - resources for workspace, collection, request, environment, and server capabilities
 - prompt templates for generating, auditing, and normalizing Bruno collections
 - prompt argument completion for common filesystem and feature inputs
+
+### Rich MCP behavior
+
+- roots-aware filesystem scoping when clients provide roots
+- best-effort server logging via MCP notifications
+- progress notifications for long-ish operations such as request scanning
+- elicitation for safe confirmation on destructive folder deletion flows
 
 ## Install
 

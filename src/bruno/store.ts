@@ -264,7 +264,20 @@ export function toRelativeCollectionPath(collectionPath: string, targetPath: str
 }
 
 export function resolveWithinCollection(collectionPath: string, value: string): string {
-  return value.startsWith('/') ? value : join(collectionPath, value);
+  const resolvedCollectionPath = resolve(collectionPath);
+  const resolvedValue = value.startsWith('/')
+    ? resolve(value)
+    : resolve(join(collectionPath, value));
+  const relativePath = relative(resolvedCollectionPath, resolvedValue);
+
+  if (relativePath.startsWith('..')) {
+    throw new BrunoError(
+      `Resolved path ${resolvedValue} escapes collection root ${resolvedCollectionPath}`,
+      'VALIDATION_ERROR',
+    );
+  }
+
+  return resolvedValue;
 }
 
 export async function loadWorkspace(workspacePath: string): Promise<BrunoWorkspaceFile> {

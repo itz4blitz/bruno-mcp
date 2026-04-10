@@ -95,6 +95,25 @@ Current prompts include:
 
 These prompts support argument completion for common inputs like collection paths and workflow styles.
 
+## Completions
+
+Prompt arguments and resource templates now support filesystem-aware completion for:
+
+- workspace paths
+- collection paths
+- request paths
+- environment names
+- common workflow/style enums
+
+When client roots are available, completions are constrained to those roots.
+
+## Rich MCP Behavior
+
+- roots-aware path checks for tools and resources
+- safe elicitation for recursive folder deletion when supported by the client
+- logging notifications for operational visibility
+- progress notifications for long-ish operations such as request listing
+
 ## Design Notes
 
 - Requests and environments are treated as file-native Bruno assets.
