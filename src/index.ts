@@ -12,7 +12,7 @@ async function main() {
     // Create and start the Bruno MCP server
     const server = createBrunoMcpServer();
     await server.start();
-    
+
     // Keep the process running
     process.on('SIGINT', () => {
       console.error('\nBruno MCP Server shutting down gracefully...');
@@ -23,7 +23,6 @@ async function main() {
       console.error('\nBruno MCP Server shutting down gracefully...');
       process.exit(0);
     });
-
   } catch (error) {
     console.error('Failed to start Bruno MCP Server:', error);
     process.exit(1);

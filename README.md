@@ -1,327 +1,161 @@
 # Bruno MCP Server
 
-A Model Context Protocol (MCP) server for generating Bruno API testing files programmatically.
+`bruno-mcp` is an MCP server for generating Bruno collections, environments, and request files, with proven REST support and minimal GraphQL-over-HTTP support.
 
-## Overview
+It is intentionally scoped to the Bruno features this repo currently proves in CI:
 
-Bruno MCP Server enables you to create, manage, and generate Bruno API testing collections, environments, and requests through standardized MCP tools. This allows for automated setup of API testing workflows and integration with Claude and other MCP-compatible clients.
+- REST request generation
+- GraphQL-over-HTTP request generation
+- Bruno-compatible environment files
+- request script and test block insertion
+- CRUD request scaffolding
+- collection discovery and request stats
+- MCP stdio integration tests
+- Bruno CLI acceptance tests using `bru run`
 
-## Features
+## Scope
 
-- **📁 Collection Management**: Create and organize Bruno collections
-- **🌍 Environment Configuration**: Manage multiple environments (dev, staging, prod)
-- **🔧 Request Generation**: Generate .bru files for all HTTP methods
-- **🔐 Authentication Support**: Bearer tokens, Basic auth, OAuth 2.0, API keys
-- **📝 Test Scripts**: Add pre/post request scripts and assertions
-- **🔄 CRUD Operations**: Generate complete CRUD request sets
-- **📊 Collection Statistics**: Analyze existing collections
+### Supported now
 
-## Installation
+- HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`
+- Request features: headers, query params, folders, sequence numbers
+- Auth: `none`, `bearer`, `basic`, `oauth2`, `api-key`, `digest`
+- Bodies: `none`, `json`, `text`, `xml`, `form-data`, `form-urlencoded`, `graphql`
+- Environment vars via `vars {}` files
+- Script blocks: `script:pre-request`, `script:post-response`, `tests`
+
+### Not supported yet
+
+- gRPC
+- WebSocket
+- binary request bodies
+- dependency-aware suite generation
+
+## Requirements
+
+- Node.js `>=20`
+- npm `10`
+
+## Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/macarthy/bruno-mcp.git
-cd bruno-mcp
-
-# Install dependencies
 npm install
-
-# Build the project
-npm run build
 ```
 
-## Client Integration
+## Scripts
 
-The Bruno MCP Server can be integrated with various AI clients that support the Model Context Protocol:
-
-### Quick Setup for Claude Desktop
-
-1. **Edit Claude Desktop config file:**
-   - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - **Windows:** `%APPDATA%/Claude/claude_desktop_config.json`
-   - **Linux:** `~/.config/Claude/claude_desktop_config.json`
-
-2. **Add Bruno MCP Server:**
-   ```json
-   {
-     "mcpServers": {
-       "bruno-mcp": {
-         "command": "node",
-         "args": ["/absolute/path/to/bruno-mcp/dist/index.js"],
-         "env": {}
-       }
-     }
-   }
-   ```
-
-3. **Restart Claude Desktop**
-
-### Supported Clients
-
-- ✅ **Claude Desktop App** - Full support
-- ✅ **Claude Code (VS Code)** - Full support  
-- ✅ **Continue** - Tools and resources
-- ✅ **Cline** - Tools and resources
-- ✅ **LM Studio** - Tools support
-- ✅ **MCP Inspector** - Development/testing
-- ✅ **Custom MCP Clients** - via SDK
-
-**📖 For detailed integration instructions with all clients, see [INTEGRATION.md](./INTEGRATION.md)**
-
-## Usage
-
-### With Claude Code or MCP Inspector
-
-1. Start the MCP server:
 ```bash
+npm run dev
+npm run build
+npm run lint
+npm run format
+npm run typecheck
+npm test
+npm run verify
+```
+
+Linting and formatting use `oxlint` and `oxfmt`.
+
+## MCP Usage
+
+Start the server locally:
+
+```bash
+npm run dev
+```
+
+Or run the built server:
+
+```bash
+npm run build
 npm start
 ```
 
-2. Use the MCP Inspector to test tools:
+The package also exposes a bin entry after install/build:
+
 ```bash
-npx @modelcontextprotocol/inspector
+./node_modules/.bin/bruno-mcp
 ```
 
-### Available MCP Tools
+## Available Tools
 
-#### `create_collection`
-Create a new Bruno collection with configuration.
+- `create_collection`
+- `create_environment`
+- `create_request`
+- `add_test_script`
+- `create_test_suite`
+- `create_crud_requests`
+- `list_collections`
+- `get_collection_stats`
 
-**Parameters:**
-- `name` (string): Collection name
-- `description` (string, optional): Collection description
-- `baseUrl` (string, optional): Default base URL
-- `outputPath` (string): Directory to create collection
-- `ignore` (array, optional): Files to ignore
+## Example
 
-**Example:**
+REST request:
+
 ```json
 {
-  "name": "my-api-tests",
-  "description": "API tests for my application", 
-  "baseUrl": "https://api.example.com",
-  "outputPath": "./collections"
-}
-```
-
-#### `create_environment`
-Create environment configuration files.
-
-**Parameters:**
-- `collectionPath` (string): Path to Bruno collection
-- `name` (string): Environment name
-- `variables` (object): Environment variables
-
-**Example:**
-```json
-{
-  "collectionPath": "./collections/my-api-tests",
-  "name": "production",
-  "variables": {
-    "baseUrl": "https://api.example.com",
-    "apiKey": "prod-key-123",
-    "timeout": 30000
-  }
-}
-```
-
-#### `create_request`
-Generate .bru request files.
-
-**Parameters:**
-- `collectionPath` (string): Path to collection
-- `name` (string): Request name
-- `method` (string): HTTP method
-- `url` (string): Request URL
-- `headers` (object, optional): HTTP headers
-- `body` (object, optional): Request body
-- `auth` (object, optional): Authentication config
-- `folder` (string, optional): Folder organization
-
-**Example:**
-```json
-{
-  "collectionPath": "./collections/my-api-tests",
-  "name": "Get User Profile",
+  "collectionPath": "./collections/sample-api",
+  "name": "Get User",
   "method": "GET",
-  "url": "{{baseUrl}}/users/{{userId}}",
+  "url": "{{baseUrl}}/users/{{id}}",
   "headers": {
-    "Authorization": "Bearer {{token}}"
+    "Accept": "application/json"
   },
-  "folder": "users"
-}
-```
-
-#### `create_crud_requests`
-Generate complete CRUD operation sets.
-
-**Parameters:**
-- `collectionPath` (string): Path to collection
-- `entityName` (string): Entity name (e.g., "Users")
-- `baseUrl` (string): API base URL
-- `folder` (string, optional): Folder name
-
-**Example:**
-```json
-{
-  "collectionPath": "./collections/my-api-tests",
-  "entityName": "Products",
-  "baseUrl": "{{baseUrl}}/api/v1",
-  "folder": "products"
-}
-```
-
-#### `add_test_script`
-Add test scripts to existing requests.
-
-**Parameters:**
-- `bruFilePath` (string): Path to .bru file
-- `scriptType` (string): Script type (pre-request, post-response, tests)
-- `script` (string): JavaScript code
-
-#### `get_collection_stats`
-Get statistics about a collection.
-
-**Parameters:**
-- `collectionPath` (string): Path to collection
-
-## Generated File Structure
-
-```
-my-collection/
-├── bruno.json              # Collection configuration
-├── environments/           # Environment files
-│   ├── development.bru
-│   ├── staging.bru
-│   └── production.bru
-├── auth/                   # Authentication requests
-│   ├── login.bru
-│   └── get-profile.bru
-└── users/                  # User management
-    ├── get-all-users.bru
-    ├── get-user-by-id.bru
-    ├── create-user.bru
-    ├── update-user.bru
-    └── delete-user.bru
-```
-
-## Bruno BRU File Format
-
-Generated .bru files follow the Bruno markup language specification:
-
-```bru
-meta {
-  name: Get Users
-  type: http
-  seq: 1
-}
-
-get {
-  url: {{baseUrl}}/users
-  body: none
-  auth: none
-}
-
-headers {
-  Content-Type: application/json
-  Authorization: Bearer {{token}}
-}
-
-script:pre-request {
-  bru.setVar("timestamp", Date.now());
-}
-
-script:post-response {
-  if (res.status === 200) {
-    bru.setVar("userId", res.body[0].id);
+  "auth": {
+    "type": "bearer",
+    "config": {
+      "token": "{{token}}"
+    }
   }
 }
+```
 
-tests {
-  test("Status should be 200", function() {
-    expect(res.status).to.equal(200);
-  });
+GraphQL request:
+
+```json
+{
+  "collectionPath": "./collections/graphql-api",
+  "name": "List Users",
+  "method": "POST",
+  "url": "{{baseUrl}}/graphql",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "type": "graphql",
+    "content": "query ListUsers($limit: Int!) {\n  users(limit: $limit) {\n    id\n    name\n  }\n}",
+    "variables": "{\n  \"limit\": 5\n}"
+  }
 }
 ```
 
-## Testing
+## Verification
 
-### Run Unit Tests
-```bash
-npm test
-```
+The repo now verifies behavior at three levels:
 
-### Run Integration Tests
-```bash
-npm run test:integration
-```
+1. Unit tests for BRU generation and collection/request helpers.
+2. MCP integration tests against the real stdio server.
+3. Bruno CLI acceptance tests that generate collections and run them with `bru run` against local REST and GraphQL test endpoints.
 
-### Test with Bruno CLI
-```bash
-# Generate a collection first
-# Then run tests with Bruno CLI
-bruno-cli run ./collections/my-api-tests/
-```
-
-## Examples
-
-See the `examples/` directory for complete usage examples:
-
-- `examples/jsonplaceholder/` - JSONPlaceholder API testing
-- `examples/authentication/` - Authentication workflows  
-- `examples/complex-workflows/` - Multi-step API scenarios
-
-## Development
-
-### Project Structure
-
-```
-src/
-├── index.ts              # Main entry point
-├── server.ts             # MCP server implementation
-├── bruno/
-│   ├── types.ts          # TypeScript interfaces
-│   ├── generator.ts      # BRU file generator
-│   ├── collection.ts     # Collection management
-│   ├── environment.ts    # Environment management
-│   └── request.ts        # Request builder
-└── tools/                # Individual MCP tools
-```
-
-### Building
+Run the full gate locally:
 
 ```bash
-npm run build      # Build TypeScript
-npm run dev        # Development mode
-npm run clean      # Clean build artifacts
+npm run verify
 ```
 
-### Code Quality
+## CI
 
-```bash
-npm run lint       # ESLint
-npm run format     # Prettier
-```
+GitHub Actions runs:
 
-## Contributing
+- format check
+- lint
+- typecheck
+- unit tests
+- MCP integration tests
+- build
+- Bruno CLI acceptance tests
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+## Notes
 
-## License
-
-MIT License - see LICENSE file for details.
-
-## Links
-
-- [Bruno API Client](https://www.usebruno.com/)
-- [Model Context Protocol](https://modelcontextprotocol.io/)
-- [Bruno Documentation](https://docs.usebruno.com/)
-- [BRU Language Specification](https://github.com/brulang/bru-lang)
-
----
-
-**Generated with Bruno MCP Server** 🚀
+- This repo is a server and generator, not a full Bruno desktop feature mirror.
+- The public scope in this README matches what the code and tests currently support.

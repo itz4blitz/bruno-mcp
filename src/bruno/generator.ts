@@ -17,8 +17,6 @@ import {
   BruTests,
   BruGeneratorOptions,
   BruValidationError,
-  AuthType,
-  BodyType
 } from './types.js';
 
 export class BruGenerator {
@@ -29,7 +27,7 @@ export class BruGenerator {
       indentSize: options.indentSize ?? 2,
       useSpaces: options.useSpaces ?? true,
       addTimestamp: options.addTimestamp ?? false,
-      validateSyntax: options.validateSyntax ?? true
+      validateSyntax: options.validateSyntax ?? true,
     };
   }
 
@@ -135,7 +133,7 @@ export class BruGenerator {
    */
   private generateHttpBlock(http: BruHttpRequest): string {
     const lines = [`${http.method.toLowerCase()} {`];
-    lines.push(this.indent(`url: ${this.escapeString(http.url)}`));
+    lines.push(this.indent(`url: ${this.formatUrl(http.url)}`));
     lines.push(this.indent(`body: ${http.body}`));
     lines.push(this.indent(`auth: ${http.auth}`));
     lines.push('}');
@@ -164,16 +162,22 @@ export class BruGenerator {
         if (auth.oauth2) {
           lines.push(this.indent(`grant_type: ${auth.oauth2.grantType}`));
           if (auth.oauth2.accessTokenUrl) {
-            lines.push(this.indent(`access_token_url: ${this.escapeString(auth.oauth2.accessTokenUrl)}`));
+            lines.push(
+              this.indent(`access_token_url: ${this.escapeString(auth.oauth2.accessTokenUrl)}`),
+            );
           }
           if (auth.oauth2.authorizationUrl) {
-            lines.push(this.indent(`authorization_url: ${this.escapeString(auth.oauth2.authorizationUrl)}`));
+            lines.push(
+              this.indent(`authorization_url: ${this.escapeString(auth.oauth2.authorizationUrl)}`),
+            );
           }
           if (auth.oauth2.clientId) {
             lines.push(this.indent(`client_id: ${this.escapeString(auth.oauth2.clientId)}`));
           }
           if (auth.oauth2.clientSecret) {
-            lines.push(this.indent(`client_secret: ${this.escapeString(auth.oauth2.clientSecret)}`));
+            lines.push(
+              this.indent(`client_secret: ${this.escapeString(auth.oauth2.clientSecret)}`),
+            );
           }
           if (auth.oauth2.scope) {
             lines.push(this.indent(`scope: ${this.escapeString(auth.oauth2.scope)}`));
@@ -246,9 +250,26 @@ export class BruGenerator {
       return lines.join('\n');
     }
 
+    if (body.type === 'graphql') {
+      const lines = ['body:graphql {'];
+      if (body.content) {
+        lines.push(this.indent(body.content));
+      }
+      lines.push('}');
+
+      if (body.variables) {
+        lines.push('');
+        lines.push('body:graphql:vars {');
+        lines.push(this.indent(body.variables));
+        lines.push('}');
+      }
+
+      return lines.join('\n');
+    }
+
     if (body.type === 'form-data' && body.formData) {
       const lines = ['body:multipart-form {'];
-      body.formData.forEach(field => {
+      body.formData.forEach((field) => {
         if (field.enabled !== false) {
           lines.push(this.indent(`${field.name}: ${this.escapeString(field.value)}`));
         }
@@ -259,7 +280,7 @@ export class BruGenerator {
 
     if (body.type === 'form-urlencoded' && body.formUrlEncoded) {
       const lines = ['body:form-urlencoded {'];
-      body.formUrlEncoded.forEach(field => {
+      body.formUrlEncoded.forEach((field) => {
         if (field.enabled !== false) {
           lines.push(this.indent(`${field.name}: ${this.escapeString(field.value)}`));
         }
@@ -288,7 +309,7 @@ export class BruGenerator {
    */
   private generatePreRequestScript(script: BruPreRequestScript): string {
     const lines = ['script:pre-request {'];
-    script.exec.forEach(line => {
+    script.exec.forEach((line) => {
       lines.push(this.indent(line));
     });
     lines.push('}');
@@ -300,7 +321,7 @@ export class BruGenerator {
    */
   private generatePostResponseScript(script: BruPostResponseScript): string {
     const lines = ['script:post-response {'];
-    script.exec.forEach(line => {
+    script.exec.forEach((line) => {
       lines.push(this.indent(line));
     });
     lines.push('}');
@@ -312,7 +333,7 @@ export class BruGenerator {
    */
   private generateTestsBlock(tests: BruTests): string {
     const lines = ['tests {'];
-    tests.exec.forEach(line => {
+    tests.exec.forEach((line) => {
       lines.push(this.indent(line));
     });
     lines.push('}');
@@ -362,6 +383,16 @@ export class BruGenerator {
           throw new BruValidationError('Key and value are required for API key auth');
         }
         break;
+      case 'oauth2':
+        if (!auth.oauth2?.grantType) {
+          throw new BruValidationError('Grant type is required for oauth2 auth');
+        }
+        break;
+      case 'digest':
+        if (!auth.digest?.username || !auth.digest?.password) {
+          throw new BruValidationError('Username and password are required for digest auth');
+        }
+        break;
     }
   }
 
@@ -369,13 +400,14 @@ export class BruGenerator {
    * Basic URL validation
    */
   private isValidUrl(url: string): boolean {
-    try {
-      new URL(url);
-      return true;
-    } catch {
-      // Check if it's a relative URL or contains variables
-      return url.startsWith('/') || url.includes('{{') || url.startsWith('http');
-    }
+    return URL.canParse(url) || url.startsWith('/') || url.includes('{{') || url.startsWith('http');
+  }
+
+  /**
+   * URLs should stay unquoted so Bruno can resolve templates correctly.
+   */
+  private formatUrl(url: string): string {
+    return url.trim();
   }
 
   /**
@@ -405,13 +437,14 @@ export class BruGenerator {
    */
   private indent(text: string): string {
     const indentChar = this.options.useSpaces ? ' ' : '\t';
-    const indentString = this.options.useSpaces ? 
-      indentChar.repeat(this.options.indentSize) : 
-      indentChar;
-    
-    return text.split('\n').map(line => 
-      line.trim() ? indentString + line : line
-    ).join('\n');
+    const indentString = this.options.useSpaces
+      ? indentChar.repeat(this.options.indentSize)
+      : indentChar;
+
+    return text
+      .split('\n')
+      .map((line) => (line.trim() ? indentString + line : line))
+      .join('\n');
   }
 }
 
@@ -430,19 +463,19 @@ export function createBasicBruFile(
   name: string,
   method: string,
   url: string,
-  sequence?: number
+  sequence?: number,
 ): BruFile {
   return {
     meta: {
       name,
       type: 'http',
-      seq: sequence
+      seq: sequence,
     },
     http: {
       method: method.toUpperCase() as any,
       url,
       body: 'none',
-      auth: 'none'
-    }
+      auth: 'none',
+    },
   };
 }

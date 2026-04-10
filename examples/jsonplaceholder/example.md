@@ -1,10 +1,9 @@
 # JSONPlaceholder Example
 
-This example demonstrates using the Bruno MCP server to create a collection for testing the JSONPlaceholder API.
+This example demonstrates using the Bruno MCP server to create a collection for the JSONPlaceholder API.
 
-## MCP Tool Usage Examples
+## Create Collection
 
-### Create Collection
 ```json
 {
   "name": "jsonplaceholder-tests",
@@ -14,7 +13,8 @@ This example demonstrates using the Bruno MCP server to create a collection for 
 }
 ```
 
-### Create Environment
+## Create Environment
+
 ```json
 {
   "collectionPath": "./examples/jsonplaceholder/jsonplaceholder-tests",
@@ -27,19 +27,25 @@ This example demonstrates using the Bruno MCP server to create a collection for 
 }
 ```
 
-### Create CRUD Requests
+## Create CRUD Requests
+
+Use the environment variable instead of hardcoding the host again:
+
 ```json
 {
   "collectionPath": "./examples/jsonplaceholder/jsonplaceholder-tests",
-  "entityName": "Posts",
-  "baseUrl": "https://jsonplaceholder.typicode.com",
+  "entityName": "Post",
+  "baseUrl": "{{baseUrl}}",
   "folder": "posts"
 }
 ```
 
-This will generate:
-- Get All Posts
-- Get Post by ID  
-- Create Post
-- Update Post
-- Delete Post
+This generates:
+
+- `Get All Post`
+- `Get Post by ID`
+- `Create Post`
+- `Update Post`
+- `Delete Post`
+
+The current CRUD helper is intentionally simple and uses the provided entity name directly for request names.

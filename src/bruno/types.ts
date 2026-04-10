@@ -7,7 +7,14 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 
 
 export type AuthType = 'none' | 'bearer' | 'basic' | 'oauth2' | 'api-key' | 'digest';
 
-export type BodyType = 'none' | 'json' | 'text' | 'xml' | 'form-data' | 'form-urlencoded' | 'binary';
+export type BodyType =
+  | 'none'
+  | 'json'
+  | 'text'
+  | 'xml'
+  | 'form-data'
+  | 'form-urlencoded'
+  | 'graphql';
 
 // Bruno Collection Configuration (bruno.json)
 export interface BrunoCollection {
@@ -75,6 +82,7 @@ export interface BruAuth {
 export interface BruBody {
   type: BodyType;
   content?: string;
+  variables?: string;
   formData?: Array<{
     name: string;
     value: string;
@@ -108,7 +116,7 @@ export interface BruPreRequestScript {
   exec: string[];
 }
 
-// Post-response script  
+// Post-response script
 export interface BruPostResponseScript {
   exec: string[];
 }
@@ -145,10 +153,15 @@ export interface CreateRequestInput {
   body?: {
     type: BodyType;
     content?: string;
+    variables?: string;
     formData?: Array<{
       name: string;
       value: string;
       type?: 'text' | 'file';
+    }>;
+    formUrlEncoded?: Array<{
+      name: string;
+      value: string;
     }>;
   };
   auth?: {
@@ -195,18 +208,38 @@ export interface CreateTestSuiteInput {
     body?: {
       type: BodyType;
       content?: string;
+      variables?: string;
+      formData?: Array<{
+        name: string;
+        value: string;
+        type?: 'text' | 'file';
+      }>;
+      formUrlEncoded?: Array<{
+        name: string;
+        value: string;
+      }>;
     };
     auth?: {
       type: AuthType;
       config: Record<string, string>;
     };
+    query?: Record<string, string | number | boolean>;
     folder?: string;
   }>;
-  dependencies?: Array<{
-    from: string;
-    to: string;
-    variable: string;
-  }>;
+}
+
+export interface CollectionSummary {
+  name: string;
+  path: string;
+  requestCount: number;
+  environmentCount: number;
+}
+
+export interface CollectionStats {
+  totalRequests: number;
+  requestsByMethod: Record<string, number>;
+  folders: string[];
+  environments: string[];
 }
 
 // Bruno file generation options
@@ -222,7 +255,7 @@ export class BrunoError extends Error {
   constructor(
     message: string,
     public code: string,
-    public details?: Record<string, unknown>
+    public details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'BrunoError';
@@ -250,7 +283,10 @@ export type BrunoCollectionConfig = Omit<BrunoCollection, 'type'> & {
 
 export type HttpRequestMethod = Extract<HttpMethod, 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'>;
 
-export type AuthenticationMethod = Extract<AuthType, 'bearer' | 'basic' | 'oauth2' | 'api-key'>;
+export type AuthenticationMethod = Extract<
+  AuthType,
+  'bearer' | 'basic' | 'oauth2' | 'api-key' | 'digest'
+>;
 
 // File system related types
 export interface FileOperationResult {

@@ -3,18 +3,19 @@
  * Handles creation and management of Bruno collections
  */
 
-import { promises as fs } from 'fs';
-import { join } from 'path';
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
 import {
   BrunoCollection,
+  CollectionStats,
+  CollectionSummary,
   CreateCollectionInput,
   FileOperationResult,
   BrunoError,
-  BruFileError
+  BruFileError,
 } from './types.js';
 
 export class CollectionManager {
-  
   /**
    * Create a new Bruno collection
    */
@@ -32,7 +33,7 @@ export class CollectionManager {
         version: '1',
         name: input.name,
         type: 'collection',
-        ignore: input.ignore || ['node_modules', '.git', '.env']
+        ignore: input.ignore || ['node_modules', '.git', '.env'],
       };
 
       const configPath = join(collectionPath, 'bruno.json');
@@ -55,13 +56,12 @@ export class CollectionManager {
 
       return {
         success: true,
-        path: collectionPath
+        path: collectionPath,
       };
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -74,15 +74,13 @@ export class CollectionManager {
       const configPath = join(collectionPath, 'bruno.json');
       const configContent = await fs.readFile(configPath, 'utf-8');
       const config = JSON.parse(configContent) as BrunoCollection;
-      
+
       this.validateCollectionConfig(config);
       return config;
-
     } catch (error) {
-      throw new BruFileError(
-        `Failed to load collection from ${collectionPath}`,
-        { originalError: error }
-      );
+      throw new BruFileError(`Failed to load collection from ${collectionPath}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -90,13 +88,13 @@ export class CollectionManager {
    * Update collection configuration
    */
   async updateCollection(
-    collectionPath: string, 
-    updates: Partial<BrunoCollection>
+    collectionPath: string,
+    updates: Partial<BrunoCollection>,
   ): Promise<FileOperationResult> {
     try {
       const existingConfig = await this.loadCollection(collectionPath);
       const updatedConfig = { ...existingConfig, ...updates };
-      
+
       this.validateCollectionConfig(updatedConfig);
 
       const configPath = join(collectionPath, 'bruno.json');
@@ -104,13 +102,12 @@ export class CollectionManager {
 
       return {
         success: true,
-        path: configPath
+        path: configPath,
       };
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -122,13 +119,26 @@ export class CollectionManager {
     try {
       const bruFiles: string[] = [];
       await this.findBruFiles(collectionPath, bruFiles);
-      return bruFiles.sort();
-
+      return bruFiles.toSorted();
     } catch (error) {
-      throw new BruFileError(
-        `Failed to list requests in collection ${collectionPath}`,
-        { originalError: error }
-      );
+      throw new BruFileError(`Failed to list requests in collection ${collectionPath}`, {
+        originalError: error,
+      });
+    }
+  }
+
+  /**
+   * List Bruno collections under a root directory.
+   */
+  async listCollections(rootPath: string): Promise<CollectionSummary[]> {
+    try {
+      const collections: CollectionSummary[] = [];
+      await this.findCollections(rootPath, collections);
+      return collections.toSorted((a, b) => a.path.localeCompare(b.path));
+    } catch (error) {
+      throw new BruFileError(`Failed to list collections in ${rootPath}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -142,13 +152,12 @@ export class CollectionManager {
 
       return {
         success: true,
-        path: fullPath
+        path: fullPath,
       };
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -156,33 +165,24 @@ export class CollectionManager {
   /**
    * Get collection statistics
    */
-  async getCollectionStats(collectionPath: string): Promise<{
-    totalRequests: number;
-    requestsByMethod: Record<string, number>;
-    folders: string[];
-    environments: string[];
-  }> {
+  async getCollectionStats(collectionPath: string): Promise<CollectionStats> {
     try {
       const requests = await this.listRequests(collectionPath);
       const folders = await this.listFolders(collectionPath);
       const environments = await this.listEnvironments(collectionPath);
 
-      // Count requests by method (would need to parse .bru files)
-      const requestsByMethod: Record<string, number> = {};
-      
-      // For now, return basic stats
+      const requestsByMethod = await this.countRequestsByMethod(requests);
+
       return {
         totalRequests: requests.length,
         requestsByMethod,
         folders,
-        environments
+        environments,
       };
-
     } catch (error) {
-      throw new BruFileError(
-        `Failed to get collection stats for ${collectionPath}`,
-        { originalError: error }
-      );
+      throw new BruFileError(`Failed to get collection stats for ${collectionPath}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -201,10 +201,7 @@ export class CollectionManager {
     // Check for invalid characters in collection name
     const invalidChars = /[<>:"/\\|?*]/;
     if (invalidChars.test(input.name)) {
-      throw new BrunoError(
-        'Collection name contains invalid characters',
-        'VALIDATION_ERROR'
-      );
+      throw new BrunoError('Collection name contains invalid characters', 'VALIDATION_ERROR');
     }
   }
 
@@ -277,8 +274,8 @@ Thumbs.db
    * Create README.md for collection
    */
   private async createCollectionReadme(
-    readmePath: string, 
-    input: CreateCollectionInput
+    readmePath: string,
+    input: CreateCollectionInput,
   ): Promise<void> {
     const readmeContent = `# ${input.name}
 
@@ -299,12 +296,12 @@ ${input.baseUrl ? `**Base URL:** \`${input.baseUrl}\`` : ''}
 
 Run all tests:
 \`\`\`bash
-bruno-cli run
+bru run
 \`\`\`
 
 Run specific environment:
 \`\`\`bash
-bruno-cli run --env production
+bru run --env production
 \`\`\`
 
 ## Generated
@@ -324,12 +321,89 @@ Created on: ${new Date().toISOString()}
     for (const entry of entries) {
       const fullPath = join(dirPath, entry.name);
 
-      if (entry.isDirectory() && entry.name !== 'node_modules' && entry.name !== '.git') {
+      if (
+        entry.isDirectory() &&
+        entry.name !== 'environments' &&
+        entry.name !== 'node_modules' &&
+        entry.name !== '.git'
+      ) {
         await this.findBruFiles(fullPath, bruFiles);
       } else if (entry.isFile() && entry.name.endsWith('.bru')) {
         bruFiles.push(fullPath);
       }
     }
+  }
+
+  /**
+   * Recursively find Bruno collections by their bruno.json file.
+   */
+  private async findCollections(dirPath: string, collections: CollectionSummary[]): Promise<void> {
+    const configPath = join(dirPath, 'bruno.json');
+
+    if (await this.fileExists(configPath)) {
+      try {
+        const config = await this.loadCollection(dirPath);
+        const requests = await this.listRequests(dirPath);
+        const environments = await this.listEnvironments(dirPath);
+
+        collections.push({
+          name: config.name,
+          path: dirPath,
+          requestCount: requests.length,
+          environmentCount: environments.length,
+        });
+      } catch {
+        // Ignore invalid configs while scanning.
+      }
+    }
+
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      if (['.git', 'dist', 'node_modules'].includes(entry.name)) {
+        continue;
+      }
+
+      await this.findCollections(join(dirPath, entry.name), collections);
+    }
+  }
+
+  /**
+   * Count request methods across all request files in a collection.
+   */
+  private async countRequestsByMethod(requestPaths: string[]): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+
+    for (const requestPath of requestPaths) {
+      try {
+        const content = await fs.readFile(requestPath, 'utf-8');
+        const method = this.extractRequestMethod(content);
+
+        if (!method) {
+          continue;
+        }
+
+        counts[method] = (counts[method] || 0) + 1;
+      } catch {
+        // Ignore unreadable request files when building stats.
+      }
+    }
+
+    return Object.fromEntries(
+      Object.entries(counts).toSorted(([left], [right]) => left.localeCompare(right)),
+    );
+  }
+
+  /**
+   * Extract the HTTP method from a BRU request file.
+   */
+  private extractRequestMethod(content: string): string | undefined {
+    const methodMatch = content.match(/^(get|post|put|delete|patch|head|options)\s*\{/m);
+    return methodMatch?.[1]?.toUpperCase();
   }
 
   /**
@@ -340,15 +414,17 @@ Created on: ${new Date().toISOString()}
     const entries = await fs.readdir(collectionPath, { withFileTypes: true });
 
     for (const entry of entries) {
-      if (entry.isDirectory() && 
-          entry.name !== 'environments' && 
-          entry.name !== 'node_modules' && 
-          entry.name !== '.git') {
+      if (
+        entry.isDirectory() &&
+        entry.name !== 'environments' &&
+        entry.name !== 'node_modules' &&
+        entry.name !== '.git'
+      ) {
         folders.push(entry.name);
       }
     }
 
-    return folders.sort();
+    return folders.toSorted();
   }
 
   /**
@@ -358,12 +434,11 @@ Created on: ${new Date().toISOString()}
     try {
       const envPath = join(collectionPath, 'environments');
       const entries = await fs.readdir(envPath, { withFileTypes: true });
-      
-      return entries
-        .filter(entry => entry.isFile() && entry.name.endsWith('.bru'))
-        .map(entry => entry.name.replace('.bru', ''))
-        .sort();
 
+      return entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.bru'))
+        .map((entry) => entry.name.replace('.bru', ''))
+        .toSorted();
     } catch {
       return [];
     }

@@ -3,18 +3,17 @@
  * Handles creation and management of Bruno environment files
  */
 
-import { promises as fs } from 'fs';
-import { join } from 'path';
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
 import {
   BrunoEnvironment,
   CreateEnvironmentInput,
   FileOperationResult,
   BrunoError,
-  BruFileError
+  BruFileError,
 } from './types.js';
 
 export class EnvironmentManager {
-
   /**
    * Create a new environment file
    */
@@ -35,13 +34,12 @@ export class EnvironmentManager {
 
       return {
         success: true,
-        path: envFilePath
+        path: envFilePath,
       };
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -49,18 +47,19 @@ export class EnvironmentManager {
   /**
    * Load an existing environment
    */
-  async loadEnvironment(collectionPath: string, environmentName: string): Promise<BrunoEnvironment> {
+  async loadEnvironment(
+    collectionPath: string,
+    environmentName: string,
+  ): Promise<BrunoEnvironment> {
     try {
       const envFilePath = join(collectionPath, 'environments', `${environmentName}.bru`);
       const envContent = await fs.readFile(envFilePath, 'utf-8');
-      
-      return this.parseEnvironmentFile(envContent, environmentName);
 
+      return this.parseEnvironmentFile(envContent, environmentName);
     } catch (error) {
-      throw new BruFileError(
-        `Failed to load environment ${environmentName}`,
-        { originalError: error }
-      );
+      throw new BruFileError(`Failed to load environment ${environmentName}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -70,7 +69,7 @@ export class EnvironmentManager {
   async updateEnvironment(
     collectionPath: string,
     environmentName: string,
-    variables: Record<string, string | number | boolean>
+    variables: Record<string, string | number | boolean>,
   ): Promise<FileOperationResult> {
     try {
       const envDir = join(collectionPath, 'environments');
@@ -79,10 +78,7 @@ export class EnvironmentManager {
       // Check if environment exists
       const exists = await this.fileExists(envFilePath);
       if (!exists) {
-        throw new BrunoError(
-          `Environment ${environmentName} does not exist`,
-          'NOT_FOUND'
-        );
+        throw new BrunoError(`Environment ${environmentName} does not exist`, 'NOT_FOUND');
       }
 
       // Generate updated content
@@ -91,13 +87,12 @@ export class EnvironmentManager {
 
       return {
         success: true,
-        path: envFilePath
+        path: envFilePath,
       };
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -105,15 +100,18 @@ export class EnvironmentManager {
   /**
    * Delete an environment
    */
-  async deleteEnvironment(collectionPath: string, environmentName: string): Promise<FileOperationResult> {
+  async deleteEnvironment(
+    collectionPath: string,
+    environmentName: string,
+  ): Promise<FileOperationResult> {
     try {
       const envFilePath = join(collectionPath, 'environments', `${environmentName}.bru`);
-      
+
       const exists = await this.fileExists(envFilePath);
       if (!exists) {
         return {
           success: false,
-          error: `Environment ${environmentName} does not exist`
+          error: `Environment ${environmentName} does not exist`,
         };
       }
 
@@ -121,13 +119,12 @@ export class EnvironmentManager {
 
       return {
         success: true,
-        path: envFilePath
+        path: envFilePath,
       };
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -138,24 +135,22 @@ export class EnvironmentManager {
   async listEnvironments(collectionPath: string): Promise<string[]> {
     try {
       const envDir = join(collectionPath, 'environments');
-      
+
       const exists = await this.directoryExists(envDir);
       if (!exists) {
         return [];
       }
 
       const entries = await fs.readdir(envDir, { withFileTypes: true });
-      
-      return entries
-        .filter(entry => entry.isFile() && entry.name.endsWith('.bru'))
-        .map(entry => entry.name.replace('.bru', ''))
-        .sort();
 
+      return entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.bru'))
+        .map((entry) => entry.name.replace('.bru', ''))
+        .toSorted();
     } catch (error) {
-      throw new BruFileError(
-        `Failed to list environments in ${collectionPath}`,
-        { originalError: error }
-      );
+      throw new BruFileError(`Failed to list environments in ${collectionPath}`, {
+        originalError: error,
+      });
     }
   }
 
@@ -166,14 +161,14 @@ export class EnvironmentManager {
     collectionPath: string,
     sourceEnv: string,
     targetEnv: string,
-    variableOverrides?: Record<string, string | number | boolean>
+    variableOverrides?: Record<string, string | number | boolean>,
   ): Promise<FileOperationResult> {
     try {
       // Load source environment
       const sourceEnvironment = await this.loadEnvironment(collectionPath, sourceEnv);
-      
+
       // Merge variables with overrides
-      const variables = variableOverrides 
+      const variables = variableOverrides
         ? { ...sourceEnvironment.variables, ...variableOverrides }
         : sourceEnvironment.variables;
 
@@ -181,13 +176,12 @@ export class EnvironmentManager {
       return await this.createEnvironment({
         collectionPath,
         name: targetEnv,
-        variables
+        variables,
       });
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -196,8 +190,8 @@ export class EnvironmentManager {
    * Get environment variables as key-value pairs
    */
   async getEnvironmentVariables(
-    collectionPath: string, 
-    environmentName: string
+    collectionPath: string,
+    environmentName: string,
   ): Promise<Record<string, string | number | boolean>> {
     const environment = await this.loadEnvironment(collectionPath, environmentName);
     return environment.variables;
@@ -210,18 +204,17 @@ export class EnvironmentManager {
     collectionPath: string,
     environmentName: string,
     key: string,
-    value: string | number | boolean
+    value: string | number | boolean,
   ): Promise<FileOperationResult> {
     try {
       const environment = await this.loadEnvironment(collectionPath, environmentName);
       environment.variables[key] = value;
 
       return await this.updateEnvironment(collectionPath, environmentName, environment.variables);
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -232,18 +225,17 @@ export class EnvironmentManager {
   async removeEnvironmentVariable(
     collectionPath: string,
     environmentName: string,
-    key: string
+    key: string,
   ): Promise<FileOperationResult> {
     try {
       const environment = await this.loadEnvironment(collectionPath, environmentName);
       delete environment.variables[key];
 
       return await this.updateEnvironment(collectionPath, environmentName, environment.variables);
-
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -253,32 +245,21 @@ export class EnvironmentManager {
    */
   private generateEnvironmentFile(
     name: string,
-    variables: Record<string, string | number | boolean>
+    variables: Record<string, string | number | boolean>,
   ): string {
+    void name;
+
     const lines: string[] = [];
 
-    // Add header comment
-    lines.push(`# ${name} Environment`);
-    lines.push(`# Generated on ${new Date().toISOString()}`);
-    lines.push('');
-
     // Add variables block
-    if (Object.keys(variables).length > 0) {
-      lines.push('vars {');
-      
-      Object.entries(variables).forEach(([key, value]) => {
-        const formattedValue = this.formatVariableValue(value);
-        lines.push(`  ${key}: ${formattedValue}`);
-      });
-      
-      lines.push('}');
-    } else {
-      lines.push('vars {');
-      lines.push('  # Add your environment variables here');
-      lines.push('  # baseUrl: \'https://api.example.com\'');
-      lines.push('  # apiKey: \'your-api-key\'');
-      lines.push('}');
-    }
+    lines.push('vars {');
+
+    Object.entries(variables).forEach(([key, value]) => {
+      const formattedValue = this.formatVariableValue(value);
+      lines.push(`  ${key}: ${formattedValue}`);
+    });
+
+    lines.push('}');
 
     return lines.join('\n') + '\n';
   }
@@ -317,8 +298,7 @@ export class EnvironmentManager {
    */
   private formatVariableValue(value: string | number | boolean): string {
     if (typeof value === 'string') {
-      // Use single quotes for strings in BRU format
-      return `'${value.replace(/'/g, "\\'")}'`;
+      return value;
     }
     return String(value);
   }
@@ -365,7 +345,7 @@ export class EnvironmentManager {
     if (invalidChars.test(input.name)) {
       throw new BrunoError(
         'Environment name contains invalid characters or spaces',
-        'VALIDATION_ERROR'
+        'VALIDATION_ERROR',
       );
     }
 
@@ -425,18 +405,18 @@ export const commonEnvironments = {
     baseUrl: 'http://localhost:3000',
     apiKey: 'dev-api-key',
     timeout: 5000,
-    debug: true
+    debug: true,
   },
   staging: {
     baseUrl: 'https://staging-api.example.com',
     apiKey: 'staging-api-key',
     timeout: 10000,
-    debug: false
+    debug: false,
   },
   production: {
     baseUrl: 'https://api.example.com',
     apiKey: 'prod-api-key',
     timeout: 30000,
-    debug: false
-  }
+    debug: false,
+  },
 };

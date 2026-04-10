@@ -1,480 +1,199 @@
 # Bruno MCP Server Integration Guide
 
-This guide explains how to integrate the Bruno MCP Server with various MCP-compatible clients including Claude Desktop, Claude Code, and other AI applications.
-
-## Table of Contents
-
-- [Prerequisites](#prerequisites)
-- [Claude Desktop App](#claude-desktop-app)
-- [Claude Code (VS Code Extension)](#claude-code-vs-code-extension)
-- [MCP Inspector (Testing)](#mcp-inspector-testing)
-- [Custom MCP Clients](#custom-mcp-clients)
-- [Troubleshooting](#troubleshooting)
+This guide shows how to run `bruno-mcp` with MCP-compatible clients using stdio.
 
 ## Prerequisites
 
-1. **Install Bruno MCP Server:**
-   ```bash
-   git clone <your-repo-url>
-   cd bruno-mcp
-   npm install
-   npm run build
-   ```
+- Node.js `>=20`
+- npm `10`
 
-2. **Verify Installation:**
-   ```bash
-   npm start
-   # Should output: "Bruno MCP Server started successfully! 🚀"
-   # Press Ctrl+C to stop
-   ```
-
-## Claude Desktop App
-
-### Configuration
-
-1. **Locate Claude Desktop Config:**
-   
-   **macOS:**
-   ```bash
-   ~/Library/Application Support/Claude/claude_desktop_config.json
-   ```
-   
-   **Windows:**
-   ```bash
-   %APPDATA%/Claude/claude_desktop_config.json
-   ```
-   
-   **Linux:**
-   ```bash
-   ~/.config/Claude/claude_desktop_config.json
-   ```
-
-2. **Add Bruno MCP Server Configuration:**
-   
-   Create or edit the config file:
-   ```json
-   {
-     "mcpServers": {
-       "bruno-mcp": {
-         "command": "node",
-         "args": ["/absolute/path/to/bruno-mcp/dist/index.js"],
-         "env": {}
-       }
-     }
-   }
-   ```
-
-   **Replace `/absolute/path/to/bruno-mcp` with your actual path!**
-
-3. **Get Absolute Path:**
-   ```bash
-   # From within the bruno-mcp directory
-   pwd
-   # Copy the output and use it in the config
-   ```
-
-4. **Complete Example Config:**
-   ```json
-   {
-     "mcpServers": {
-       "bruno-mcp": {
-         "command": "node",
-         "args": ["/Users/yourname/projects/bruno-mcp/dist/index.js"],
-         "env": {
-           "NODE_ENV": "production"
-         }
-       }
-     }
-   }
-   ```
-
-5. **Restart Claude Desktop** to load the new configuration.
-
-### Usage in Claude Desktop
-
-Once configured, you can use Bruno MCP tools in Claude Desktop conversations:
-
-```
-Create a Bruno collection for testing a REST API:
-
-Collection name: "ecommerce-api-tests"
-Description: "E-commerce API testing suite"
-Base URL: "https://api.shop.com"
-Output path: "./collections"
-
-Also create environments for development and production.
-```
-
-Claude will use the Bruno MCP tools to generate the collection and files.
-
-## Claude Code (VS Code Extension)
-
-### Configuration
-
-1. **Open VS Code Settings** (Cmd/Ctrl + ,)
-
-2. **Search for "Claude Code"** or navigate to Extensions → Claude Code
-
-3. **Find MCP Settings** or edit settings.json directly:
-
-   **Via Settings UI:**
-   - Look for "Claude Code: MCP Servers"
-   - Add new server configuration
-
-   **Via settings.json:**
-   ```json
-   {
-     "claude-code.mcpServers": {
-       "bruno-mcp": {
-         "command": "node",
-         "args": ["/absolute/path/to/bruno-mcp/dist/index.js"],
-         "env": {}
-       }
-     }
-   }
-   ```
-
-4. **Alternative: Workspace Configuration**
-   
-   Create `.vscode/settings.json` in your project:
-   ```json
-   {
-     "claude-code.mcpServers": {
-       "bruno-mcp": {
-         "command": "node",
-         "args": ["./node_modules/.bin/bruno-mcp"],
-         "env": {}
-       }
-     }
-   }
-   ```
-
-5. **Reload VS Code** to apply changes.
-
-### Usage in Claude Code
-
-Use Bruno MCP tools directly in Claude Code conversations:
-
-```
-I need to set up API tests for my Node.js project. Create a Bruno collection with:
-- Collection name: "user-service-tests"  
-- Base URL from environment variable
-- CRUD operations for users endpoint
-- Authentication tests with JWT tokens
-```
-
-## OpenAI Compatible Clients
-
-For OpenAI API compatible clients that support MCP:
-
-### Generic MCP Client Configuration
-
-```json
-{
-  "mcp_servers": [
-    {
-      "name": "bruno-mcp",
-      "command": "node",
-      "args": ["/path/to/bruno-mcp/dist/index.js"],
-      "transport": "stdio"
-    }
-  ]
-}
-```
-
-### Example Integration Code
-
-```typescript
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-
-// Connect to Bruno MCP Server
-const transport = new StdioClientTransport({
-  command: 'node',
-  args: ['/path/to/bruno-mcp/dist/index.js']
-});
-
-const client = new Client({
-  name: 'my-app',
-  version: '1.0.0'
-});
-
-await client.connect(transport);
-
-// Use Bruno MCP tools
-const result = await client.callTool({
-  name: 'create_collection',
-  arguments: {
-    name: 'api-tests',
-    outputPath: './collections',
-    baseUrl: 'https://api.example.com'
-  }
-});
-
-console.log(result);
-```
-
-## Other MCP-Compatible Clients
-
-### Continue (VS Code Extension)
-
-Add to your Continue config (`~/.continue/config.json`):
-
-```json
-{
-  "mcpServers": {
-    "bruno-mcp": {
-      "command": "node",
-      "args": ["/path/to/bruno-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-### Cline (VS Code Extension)
-
-Configure in Cline settings:
-
-```json
-{
-  "cline.mcpServers": [
-    {
-      "name": "bruno-mcp",
-      "command": "node", 
-      "args": ["/path/to/bruno-mcp/dist/index.js"]
-    }
-  ]
-}
-```
-
-### LM Studio
-
-1. Open LM Studio
-2. Go to Settings → MCP Servers
-3. Add new server:
-   - **Name:** bruno-mcp
-   - **Command:** node
-   - **Args:** `/path/to/bruno-mcp/dist/index.js`
-
-## MCP Inspector (Testing)
-
-For development and testing:
+Install and build the server:
 
 ```bash
-# Start MCP Inspector
-npx @modelcontextprotocol/inspector
-
-# When prompted, enter:
-# Command: node
-# Args: /path/to/bruno-mcp/dist/index.js
+git clone <your-repo-url>
+cd bruno-mcp
+npm install
+npm run build
 ```
 
-This opens a web interface to test all Bruno MCP tools interactively.
+Verify the built server starts:
 
-## Docker Integration
-
-### Dockerfile for Bruno MCP Server
-
-```dockerfile
-FROM node:18-alpine
-
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-
-COPY dist/ ./dist/
-COPY bruno-mcp ./bruno-mcp
-
-EXPOSE 3000
-CMD ["node", "dist/index.js"]
+```bash
+npm start
 ```
 
-### Docker Compose
+Expected stderr output:
 
-```yaml
-version: '3.8'
-services:
-  bruno-mcp:
-    build: .
-    volumes:
-      - ./collections:/app/collections
-    environment:
-      - NODE_ENV=production
+```text
+Bruno MCP Server started successfully!
+Ready to generate Bruno API testing files.
 ```
 
-### Client Configuration for Docker
+## Important Runtime Notes
+
+- The server uses MCP over stdio.
+- It does not expose an HTTP port.
+- No custom server environment variables are currently required.
+- The most reliable launch command is `node /absolute/path/to/dist/index.js`.
+
+## Claude Desktop
+
+Config file locations:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+Example config:
 
 ```json
 {
   "mcpServers": {
     "bruno-mcp": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-v", "$(pwd)/collections:/app/collections", "bruno-mcp"],
+      "command": "node",
+      "args": ["/absolute/path/to/bruno-mcp/dist/index.js"],
       "env": {}
     }
   }
 }
 ```
 
-## Environment Variables
+Restart Claude Desktop after saving the config.
 
-Configure Bruno MCP Server behavior:
+## Claude Code / VS Code MCP Clients
+
+Example settings JSON:
 
 ```json
 {
-  "mcpServers": {
+  "claude-code.mcpServers": {
     "bruno-mcp": {
       "command": "node",
-      "args": ["/path/to/bruno-mcp/dist/index.js"],
-      "env": {
-        "NODE_ENV": "production",
-        "BRUNO_DEFAULT_OUTPUT": "/path/to/collections",
-        "BRUNO_DEFAULT_BASE_URL": "https://api.example.com",
-        "DEBUG": "bruno-mcp:*"
-      }
+      "args": ["/absolute/path/to/bruno-mcp/dist/index.js"],
+      "env": {}
     }
   }
 }
+```
+
+If you prefer a workspace-local setup, point to the built file from the repo root:
+
+```json
+{
+  "claude-code.mcpServers": {
+    "bruno-mcp": {
+      "command": "node",
+      "args": ["${workspaceFolder}/dist/index.js"],
+      "env": {}
+    }
+  }
+}
+```
+
+## MCP Inspector
+
+Run the server first:
+
+```bash
+npm run build
+npm start
+```
+
+Then connect with your preferred MCP inspector using stdio and the same launch command:
+
+- command: `node`
+- args: `[/absolute/path/to/bruno-mcp/dist/index.js]`
+
+## Custom MCP Clients
+
+TypeScript example:
+
+```ts
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+const transport = new StdioClientTransport({
+  command: 'node',
+  args: ['/absolute/path/to/bruno-mcp/dist/index.js'],
+});
+
+const client = new Client({
+  name: 'example-client',
+  version: '1.0.0',
+});
+
+await client.connect(transport);
+
+const tools = await client.listTools();
+console.log(tools.tools.map((tool) => tool.name));
+
+const result = await client.callTool({
+  name: 'create_collection',
+  arguments: {
+    name: 'sample-api',
+    outputPath: './collections',
+  },
+});
+
+console.log(result);
+```
+
+## Supported Tools
+
+- `create_collection`
+- `create_environment`
+- `create_request`
+- `add_test_script`
+- `create_test_suite`
+- `create_crud_requests`
+- `list_collections`
+- `get_collection_stats`
+
+## Supported Request Generation
+
+`create_request` currently supports:
+
+- REST requests
+- GraphQL over HTTP using `body.type: "graphql"`
+- auth: `none`, `bearer`, `basic`, `oauth2`, `api-key`, `digest`
+- body types: `none`, `json`, `text`, `xml`, `form-data`, `form-urlencoded`, `graphql`
+
+## Example Prompts
+
+Example collection prompt:
+
+```text
+Create a Bruno collection named "shop-api" in ./collections,
+add a test environment, and generate CRUD requests for Product using {{baseUrl}}/api.
+```
+
+Example GraphQL prompt:
+
+```text
+Create a GraphQL Bruno request named "List Users" that posts to {{baseUrl}}/graphql,
+uses a bearer token, and includes variables for limit=5.
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### Server does not start
 
-1. **"Command not found" Error**
-   ```bash
-   # Verify Node.js installation
-   node --version
-   npm --version
-   
-   # Verify Bruno MCP build
-   ls -la /path/to/bruno-mcp/dist/
-   ```
+- Verify Node.js is `>=20`
+- Run `npm run build`
+- Launch with `node /absolute/path/to/dist/index.js`
 
-2. **Permission Denied**
-   ```bash
-   # Make script executable
-   chmod +x /path/to/bruno-mcp/dist/index.js
-   ```
+### Client cannot connect
 
-3. **Module Not Found**
-   ```bash
-   # Reinstall dependencies
-   cd bruno-mcp
-   rm -rf node_modules package-lock.json
-   npm install
-   npm run build
-   ```
+- Confirm the MCP client is configured for stdio, not HTTP
+- Use absolute paths in client config
+- Check stderr output from the spawned process
 
-4. **Path Issues**
-   ```bash
-   # Use absolute paths in all configurations
-   # Get absolute path:
-   cd bruno-mcp && pwd
-   ```
+### Generated files do not run in Bruno CLI
 
-### Debugging
+- Run `npm run verify` in this repo first
+- Ensure the generated collection root contains `bruno.json`
+- Run Bruno from the collection root with `bru run --env <env-name>`
 
-1. **Enable Debug Logging**
-   ```json
-   {
-     "env": {
-       "DEBUG": "bruno-mcp:*",
-       "NODE_ENV": "development"
-     }
-   }
-   ```
+### Docker / container usage
 
-2. **Test Manually**
-   ```bash
-   # Test server startup
-   node dist/index.js
-   
-   # Should output startup message
-   # Press Ctrl+C to stop
-   ```
-
-3. **Check Client Logs**
-   - Claude Desktop: Check application logs
-   - VS Code: Check Developer Console (Help → Toggle Developer Tools)
-   - Other clients: Check their respective log outputs
-
-### Getting Help
-
-1. **Check Server Status**
-   ```bash
-   npm run build && npm start
-   ```
-
-2. **Validate Configuration**
-   ```bash
-   # Use MCP Inspector for testing
-   npx @modelcontextprotocol/inspector
-   ```
-
-3. **Common Fixes**
-   - Restart the client application after configuration changes
-   - Use absolute paths for all file references
-   - Ensure Node.js version is 18+ 
-   - Verify file permissions on the script
-
-## Configuration Examples
-
-### Development Setup
-```json
-{
-  "mcpServers": {
-    "bruno-mcp-dev": {
-      "command": "npm",
-      "args": ["run", "dev"],
-      "cwd": "/path/to/bruno-mcp",
-      "env": {
-        "NODE_ENV": "development",
-        "DEBUG": "bruno-mcp:*"
-      }
-    }
-  }
-}
-```
-
-### Production Setup
-```json
-{
-  "mcpServers": {
-    "bruno-mcp": {
-      "command": "node",
-      "args": ["/opt/bruno-mcp/dist/index.js"],
-      "env": {
-        "NODE_ENV": "production",
-        "BRUNO_DEFAULT_OUTPUT": "/var/collections"
-      }
-    }
-  }
-}
-```
-
-### Multiple Instances
-```json
-{
-  "mcpServers": {
-    "bruno-mcp-dev": {
-      "command": "node",
-      "args": ["/path/to/bruno-mcp/dist/index.js"],
-      "env": { "BRUNO_ENV": "development" }
-    },
-    "bruno-mcp-prod": {
-      "command": "node", 
-      "args": ["/path/to/bruno-mcp/dist/index.js"],
-      "env": { "BRUNO_ENV": "production" }
-    }
-  }
-}
-```
-
----
-
-After configuration, you can use natural language with your AI client to create Bruno collections:
-
-> *"Create a Bruno collection for testing a RESTful API with CRUD operations, authentication, and error handling scenarios."*
-
-The AI will use the Bruno MCP Server to generate properly formatted .bru files automatically! 🚀
+If you containerize the server, treat it as a stdio process. Do not expose an HTTP port unless you add your own wrapper process around it.

@@ -1,0 +1,15 @@
+{
+  "ignorePatterns": [
+    "coverage",
+    "dist",
+    "docs",
+    "generated-collections",
+    "node_modules",
+    "package-lock.json",
+    "test-collections"
+  ],
+  "printWidth": 100,
+  "semi": true,
+  "singleQuote": true,
+  "trailingComma": "all"
+}

@@ -7,20 +7,126 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-// Import our Bruno modules
 import { createCollectionManager } from './bruno/collection.js';
 import { createEnvironmentManager } from './bruno/environment.js';
 import { createRequestBuilder } from './bruno/request.js';
 import {
+  AddTestScriptInput,
+  AuthType,
+  BodyType,
   CreateCollectionInput,
   CreateEnvironmentInput,
   CreateRequestInput,
-  AddTestScriptInput,
   CreateTestSuiteInput,
   HttpMethod,
-  AuthType,
-  BodyType
 } from './bruno/types.js';
+
+type ToolSchema = Record<string, z.ZodTypeAny>;
+
+const METHOD_VALUES = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
+const AUTH_VALUES = ['none', 'bearer', 'basic', 'oauth2', 'api-key', 'digest'] as const;
+const BODY_VALUES = [
+  'none',
+  'json',
+  'text',
+  'xml',
+  'form-data',
+  'form-urlencoded',
+  'graphql',
+] as const;
+
+const requestBodySchema = z.object({
+  type: z.enum(BODY_VALUES),
+  content: z.string().optional(),
+  variables: z.string().optional(),
+  formData: z
+    .array(
+      z.object({
+        name: z.string(),
+        value: z.string(),
+        type: z.enum(['text', 'file']).optional(),
+      }),
+    )
+    .optional(),
+  formUrlEncoded: z
+    .array(
+      z.object({
+        name: z.string(),
+        value: z.string(),
+      }),
+    )
+    .optional(),
+});
+
+const requestAuthSchema = z.object({
+  type: z.enum(AUTH_VALUES),
+  config: z.record(z.string()),
+});
+
+const createCollectionToolSchema: ToolSchema = {
+  name: z.string().min(1, 'Collection name is required'),
+  description: z.string().optional(),
+  baseUrl: z.string().url().optional(),
+  outputPath: z.string().min(1, 'Output path is required'),
+  ignore: z.array(z.string()).optional(),
+};
+
+const createEnvironmentToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  name: z.string().min(1, 'Environment name is required'),
+  variables: z.record(z.union([z.string(), z.number(), z.boolean()])),
+};
+
+const createRequestToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  name: z.string().min(1, 'Request name is required'),
+  method: z.enum(METHOD_VALUES),
+  url: z.string().min(1, 'URL is required'),
+  headers: z.record(z.string()).optional(),
+  body: requestBodySchema.optional(),
+  auth: requestAuthSchema.optional(),
+  query: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  folder: z.string().optional(),
+  sequence: z.number().int().positive().optional(),
+};
+
+const addTestScriptToolSchema: ToolSchema = {
+  bruFilePath: z.string().min(1, 'BRU file path is required'),
+  scriptType: z.enum(['pre-request', 'post-response', 'tests']),
+  script: z.string().min(1, 'Script content is required'),
+};
+
+const createTestSuiteToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  suiteName: z.string().min(1, 'Suite name is required'),
+  requests: z.array(
+    z.object({
+      name: z.string().min(1, 'Request name is required'),
+      method: z.enum(METHOD_VALUES),
+      url: z.string().min(1, 'URL is required'),
+      headers: z.record(z.string()).optional(),
+      body: requestBodySchema.optional(),
+      auth: requestAuthSchema.optional(),
+      query: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+      folder: z.string().optional(),
+    }),
+  ),
+};
+
+const createCrudRequestsToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  entityName: z.string().min(1, 'Entity name is required'),
+  baseUrl: z.string().min(1, 'Base URL is required'),
+  folder: z.string().optional(),
+};
+
+const listCollectionsToolSchema: ToolSchema = {
+  path: z.string().min(1, 'Directory path is required'),
+};
+
+const getCollectionStatsToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+};
 
 export class BrunoMcpServer {
   private server: McpServer;
@@ -29,13 +135,11 @@ export class BrunoMcpServer {
   private requestBuilder;
 
   constructor() {
-    // Initialize MCP server
     this.server = new McpServer({
       name: 'bruno-mcp',
-      version: '1.0.0'
+      version: '1.0.0',
     });
 
-    // Initialize Bruno managers
     this.collectionManager = createCollectionManager();
     this.environmentManager = createEnvironmentManager();
     this.requestBuilder = createRequestBuilder();
@@ -65,59 +169,21 @@ export class BrunoMcpServer {
       'create_collection',
       {
         title: 'Create Bruno Collection',
-        description: 'Create a new Bruno API testing collection with configuration',
-        inputSchema: {
-          name: z.string().min(1, 'Collection name is required'),
-          description: z.string().optional(),
-          baseUrl: z.string().url().optional(),
-          outputPath: z.string().min(1, 'Output path is required'),
-          ignore: z.array(z.string()).optional()
+        description: 'Create a new Bruno collection with configuration.',
+        inputSchema: createCollectionToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as CreateCollectionInput;
+          const result = await this.collectionManager.createCollection(args);
+
+          return result.success
+            ? this.textResult(`Created Bruno collection "${args.name}" at ${result.path}`)
+            : this.errorResult(`Failed to create collection: ${result.error}`);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('creating collection', error));
         }
       },
-      async (args) => {
-        try {
-          const input: CreateCollectionInput = {
-            name: args.name,
-            description: args.description,
-            baseUrl: args.baseUrl,
-            outputPath: args.outputPath,
-            ignore: args.ignore
-          };
-
-          const result = await this.collectionManager.createCollection(input);
-
-          if (result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `✅ Bruno collection "${args.name}" created successfully at: ${result.path}`
-                }
-              ]
-            };
-          } else {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `❌ Failed to create collection: ${result.error}`
-                }
-              ],
-              isError: true
-            };
-          }
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Error creating collection: ${error instanceof Error ? error.message : 'Unknown error'}`
-              }
-            ],
-            isError: true
-          };
-        }
-      }
     );
   }
 
@@ -129,55 +195,21 @@ export class BrunoMcpServer {
       'create_environment',
       {
         title: 'Create Bruno Environment',
-        description: 'Create environment configuration files for Bruno collection',
-        inputSchema: {
-          collectionPath: z.string().min(1, 'Collection path is required'),
-          name: z.string().min(1, 'Environment name is required'),
-          variables: z.record(z.union([z.string(), z.number(), z.boolean()]))
+        description: 'Create an environment file for a Bruno collection.',
+        inputSchema: createEnvironmentToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as CreateEnvironmentInput;
+          const result = await this.environmentManager.createEnvironment(args);
+
+          return result.success
+            ? this.textResult(`Created environment "${args.name}" at ${result.path}`)
+            : this.errorResult(`Failed to create environment: ${result.error}`);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('creating environment', error));
         }
       },
-      async (args) => {
-        try {
-          const input: CreateEnvironmentInput = {
-            collectionPath: args.collectionPath,
-            name: args.name,
-            variables: args.variables
-          };
-
-          const result = await this.environmentManager.createEnvironment(input);
-
-          if (result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `✅ Environment "${args.name}" created successfully at: ${result.path}`
-                }
-              ]
-            };
-          } else {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `❌ Failed to create environment: ${result.error}`
-                }
-              ],
-              isError: true
-            };
-          }
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Error creating environment: ${error instanceof Error ? error.message : 'Unknown error'}`
-              }
-            ],
-            isError: true
-          };
-        }
-      }
     );
   }
 
@@ -189,87 +221,46 @@ export class BrunoMcpServer {
       'create_request',
       {
         title: 'Create Bruno Request',
-        description: 'Generate .bru request files for API testing',
-        inputSchema: {
-          collectionPath: z.string().min(1, 'Collection path is required'),
-          name: z.string().min(1, 'Request name is required'),
-          method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']),
-          url: z.string().min(1, 'URL is required'),
-          headers: z.record(z.string()).optional(),
-          body: z.object({
-            type: z.enum(['none', 'json', 'text', 'xml', 'form-data', 'form-urlencoded', 'binary']),
-            content: z.string().optional(),
-            formData: z.array(z.object({
-              name: z.string(),
-              value: z.string(),
-              type: z.enum(['text', 'file']).optional()
-            })).optional()
-          }).optional(),
-          auth: z.object({
-            type: z.enum(['none', 'bearer', 'basic', 'oauth2', 'api-key', 'digest']),
-            config: z.record(z.string())
-          }).optional(),
-          query: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
-          folder: z.string().optional(),
-          sequence: z.number().optional()
+        description: 'Generate a Bruno .bru request file for REST or GraphQL over HTTP.',
+        inputSchema: createRequestToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            collectionPath: string;
+            name: string;
+            method: HttpMethod;
+            url: string;
+            headers?: Record<string, string>;
+            body?: {
+              type: BodyType;
+              content?: string;
+              variables?: string;
+              formData?: Array<{
+                name: string;
+                value: string;
+                type?: 'text' | 'file';
+              }>;
+              formUrlEncoded?: Array<{ name: string; value: string }>;
+            };
+            auth?: {
+              type: AuthType;
+              config: Record<string, string>;
+            };
+            query?: Record<string, string | number | boolean>;
+            folder?: string;
+            sequence?: number;
+          };
+
+          const result = await this.requestBuilder.createRequest(this.toCreateRequestInput(args));
+
+          return result.success
+            ? this.textResult(`Created request "${args.name}" at ${result.path}`)
+            : this.errorResult(`Failed to create request: ${result.error}`);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('creating request', error));
         }
       },
-      async (args) => {
-        try {
-          const input: CreateRequestInput = {
-            collectionPath: args.collectionPath,
-            name: args.name,
-            method: args.method as HttpMethod,
-            url: args.url,
-            headers: args.headers,
-            body: args.body ? {
-              type: args.body.type as BodyType,
-              content: args.body.content,
-              formData: args.body.formData
-            } : undefined,
-            auth: args.auth ? {
-              type: args.auth.type as AuthType,
-              config: args.auth.config
-            } : undefined,
-            query: args.query,
-            folder: args.folder,
-            sequence: args.sequence
-          };
-
-          const result = await this.requestBuilder.createRequest(input);
-
-          if (result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `✅ Request "${args.name}" created successfully at: ${result.path}`
-                }
-              ]
-            };
-          } else {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: `❌ Failed to create request: ${result.error}`
-                }
-              ],
-              isError: true
-            };
-          }
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Error creating request: ${error instanceof Error ? error.message : 'Unknown error'}`
-              }
-            ],
-            isError: true
-          };
-        }
-      }
     );
   }
 
@@ -281,37 +272,21 @@ export class BrunoMcpServer {
       'add_test_script',
       {
         title: 'Add Test Script',
-        description: 'Add pre-request or post-response scripts to Bruno requests',
-        inputSchema: {
-          bruFilePath: z.string().min(1, 'BRU file path is required'),
-          scriptType: z.enum(['pre-request', 'post-response', 'tests']),
-          script: z.string().min(1, 'Script content is required')
+        description: 'Add or replace a pre-request, post-response, or tests block in a .bru file.',
+        inputSchema: addTestScriptToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as AddTestScriptInput;
+          const result = await this.requestBuilder.addTestScript(args);
+
+          return result.success
+            ? this.textResult(`Updated ${args.scriptType} block in ${result.path}`)
+            : this.errorResult(`Failed to add script: ${result.error}`);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('adding test script', error));
         }
       },
-      async (args) => {
-        try {
-          // For now, this is a placeholder implementation
-          // In a full implementation, we'd parse the existing .bru file and add the script
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `✅ ${args.scriptType} script added to ${args.bruFilePath}\n\nScript content:\n${args.script}`
-              }
-            ]
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Error adding test script: ${error instanceof Error ? error.message : 'Unknown error'}`
-              }
-            ],
-            isError: true
-          };
-        }
-      }
     );
   }
 
@@ -323,83 +298,44 @@ export class BrunoMcpServer {
       'create_test_suite',
       {
         title: 'Create Test Suite',
-        description: 'Generate comprehensive test collections with multiple related requests',
-        inputSchema: {
-          collectionPath: z.string().min(1, 'Collection path is required'),
-          suiteName: z.string().min(1, 'Suite name is required'),
-          requests: z.array(z.object({
-            name: z.string(),
-            method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']),
-            url: z.string(),
-            headers: z.record(z.string()).optional(),
-            body: z.object({
-              type: z.enum(['none', 'json', 'text', 'xml', 'form-data', 'form-urlencoded']),
-              content: z.string().optional()
-            }).optional(),
-            auth: z.object({
-              type: z.enum(['none', 'bearer', 'basic', 'oauth2', 'api-key']),
-              config: z.record(z.string())
-            }).optional(),
-            folder: z.string().optional()
-          })),
-          dependencies: z.array(z.object({
-            from: z.string(),
-            to: z.string(),
-            variable: z.string()
-          })).optional()
-        }
+        description: 'Generate multiple related REST requests into a suite folder.',
+        inputSchema: createTestSuiteToolSchema,
       },
-      async (args) => {
+      async (rawArgs) => {
         try {
+          const args = rawArgs as CreateTestSuiteInput;
           const results = [];
-          
-          for (let i = 0; i < args.requests.length; i++) {
-            const req = args.requests[i];
-            const input: CreateRequestInput = {
-              collectionPath: args.collectionPath,
-              name: req.name,
-              method: req.method as HttpMethod,
-              url: req.url,
-              headers: req.headers,
-              body: req.body ? {
-                type: req.body.type as BodyType,
-                content: req.body.content
-              } : undefined,
-              auth: req.auth ? {
-                type: req.auth.type as AuthType,
-                config: req.auth.config
-              } : undefined,
-              folder: req.folder || args.suiteName,
-              sequence: i + 1
-            };
 
-            const result = await this.requestBuilder.createRequest(input);
-            results.push(result);
+          for (const [index, request] of args.requests.entries()) {
+            const result = await this.requestBuilder.createRequest(
+              this.toCreateRequestInput({
+                collectionPath: args.collectionPath,
+                ...request,
+                folder: request.folder || args.suiteName,
+                sequence: index + 1,
+              }),
+            );
+            results.push({ name: request.name, result });
           }
 
-          const successCount = results.filter(r => r.success).length;
-          const failCount = results.filter(r => !r.success).length;
+          const failures = results.filter(({ result }) => !result.success);
+          const successCount = results.length - failures.length;
+          const lines = [
+            `Created test suite "${args.suiteName}" with ${successCount}/${results.length} requests.`,
+          ];
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `✅ Test suite "${args.suiteName}" created with ${successCount} requests${failCount > 0 ? ` (${failCount} failed)` : ''}`
-              }
-            ]
-          };
+          if (failures.length > 0) {
+            lines.push('Failed requests:');
+            lines.push(...failures.map(({ name, result }) => `- ${name}: ${result.error}`));
+          }
+
+          return failures.length > 0
+            ? this.errorResult(lines.join('\n'))
+            : this.textResult(lines.join('\n'));
         } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Error creating test suite: ${error instanceof Error ? error.message : 'Unknown error'}`
-              }
-            ],
-            isError: true
-          };
+          return this.errorResult(this.getErrorMessage('creating test suite', error));
         }
-      }
+      },
     );
   }
 
@@ -411,46 +347,42 @@ export class BrunoMcpServer {
       'create_crud_requests',
       {
         title: 'Create CRUD Requests',
-        description: 'Generate a complete set of CRUD operations for an entity',
-        inputSchema: {
-          collectionPath: z.string().min(1, 'Collection path is required'),
-          entityName: z.string().min(1, 'Entity name is required'),
-          baseUrl: z.string().min(1, 'Base URL is required'),
-          folder: z.string().optional()
-        }
+        description: 'Generate a REST CRUD request set for an entity.',
+        inputSchema: createCrudRequestsToolSchema,
       },
-      async (args) => {
+      async (rawArgs) => {
         try {
+          const args = rawArgs as {
+            collectionPath: string;
+            entityName: string;
+            baseUrl: string;
+            folder?: string;
+          };
+
           const results = await this.requestBuilder.createCrudRequests(
             args.collectionPath,
             args.entityName,
             args.baseUrl,
-            args.folder
+            args.folder,
           );
 
-          const successCount = results.filter(r => r.success).length;
-          const failCount = results.filter(r => !r.success).length;
+          const successCount = results.filter((result) => result.success).length;
+          const failures = results.filter((result) => !result.success);
+          const lines = [
+            `Created CRUD request set for "${args.entityName}" with ${successCount}/${results.length} requests.`,
+          ];
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `✅ CRUD operations for "${args.entityName}" created with ${successCount} requests${failCount > 0 ? ` (${failCount} failed)` : ''}`
-              }
-            ]
-          };
+          if (failures.length > 0) {
+            lines.push(...failures.map((result) => `- ${result.error}`));
+          }
+
+          return failures.length > 0
+            ? this.errorResult(lines.join('\n'))
+            : this.textResult(lines.join('\n'));
         } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Error creating CRUD requests: ${error instanceof Error ? error.message : 'Unknown error'}`
-              }
-            ],
-            isError: true
-          };
+          return this.errorResult(this.getErrorMessage('creating CRUD requests', error));
         }
-      }
+      },
     );
   }
 
@@ -462,34 +394,31 @@ export class BrunoMcpServer {
       'list_collections',
       {
         title: 'List Collections',
-        description: 'List all Bruno collections in a directory',
-        inputSchema: {
-          path: z.string().min(1, 'Directory path is required')
+        description: 'List Bruno collections under a directory.',
+        inputSchema: listCollectionsToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { path: string };
+          const collections = await this.collectionManager.listCollections(args.path);
+
+          if (collections.length === 0) {
+            return this.textResult(`No Bruno collections found under ${args.path}`);
+          }
+
+          const lines = [`Found ${collections.length} Bruno collection(s) under ${args.path}:`];
+          lines.push(
+            ...collections.map(
+              (collection) =>
+                `- ${collection.name}: ${collection.path} (${collection.requestCount} requests, ${collection.environmentCount} environments)`,
+            ),
+          );
+
+          return this.textResult(lines.join('\n'));
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('listing collections', error));
         }
       },
-      async (args) => {
-        try {
-          // This would scan for bruno.json files in subdirectories
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `📁 Scanning for Bruno collections in: ${args.path}\n\n(This feature will be implemented in a future version)`
-              }
-            ]
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Error listing collections: ${error instanceof Error ? error.message : 'Unknown error'}`
-              }
-            ],
-            isError: true
-          };
-        }
-      }
     );
   }
 
@@ -501,43 +430,35 @@ export class BrunoMcpServer {
       'get_collection_stats',
       {
         title: 'Get Collection Statistics',
-        description: 'Get detailed statistics about a Bruno collection',
-        inputSchema: {
-          collectionPath: z.string().min(1, 'Collection path is required')
+        description: 'Get statistics about a Bruno collection.',
+        inputSchema: getCollectionStatsToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { collectionPath: string };
+          const stats = await this.collectionManager.getCollectionStats(args.collectionPath);
+
+          const methodLines =
+            Object.entries(stats.requestsByMethod).length > 0
+              ? Object.entries(stats.requestsByMethod).map(
+                  ([method, count]) => `- ${method}: ${count}`,
+                )
+              : ['- No requests detected'];
+
+          return this.textResult(
+            [
+              `Collection statistics for ${args.collectionPath}`,
+              `Total requests: ${stats.totalRequests}`,
+              `Folders: ${stats.folders.length > 0 ? stats.folders.join(', ') : 'None'}`,
+              `Environments: ${stats.environments.length > 0 ? stats.environments.join(', ') : 'None'}`,
+              'Request methods:',
+              ...methodLines,
+            ].join('\n'),
+          );
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('getting collection stats', error));
         }
       },
-      async (args) => {
-        try {
-          const stats = await this.collectionManager.getCollectionStats(args.collectionPath);
-          
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `📊 Collection Statistics for ${args.collectionPath}:
-
-📁 Total Requests: ${stats.totalRequests}
-📂 Folders: ${stats.folders.length > 0 ? stats.folders.join(', ') : 'None'}
-🌍 Environments: ${stats.environments.length > 0 ? stats.environments.join(', ') : 'None'}
-
-Request Methods:
-${Object.entries(stats.requestsByMethod).map(([method, count]) => `  ${method}: ${count}`).join('\n') || '  (Analysis not yet implemented)'}
-`
-              }
-            ]
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `❌ Error getting collection stats: ${error instanceof Error ? error.message : 'Unknown error'}`
-              }
-            ],
-            isError: true
-          };
-        }
-      }
     );
   }
 
@@ -547,9 +468,87 @@ ${Object.entries(stats.requestsByMethod).map(([method, count]) => `  ${method}: 
   async start(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    
-    console.error('Bruno MCP Server started successfully! 🚀');
+
+    console.error('Bruno MCP Server started successfully!');
     console.error('Ready to generate Bruno API testing files.');
+  }
+
+  /**
+   * Convert raw MCP args into a request input.
+   */
+  private toCreateRequestInput(args: {
+    collectionPath: string;
+    name: string;
+    method: HttpMethod;
+    url: string;
+    headers?: Record<string, string>;
+    body?: {
+      type: BodyType;
+      content?: string;
+      variables?: string;
+      formData?: Array<{ name: string; value: string; type?: 'text' | 'file' }>;
+      formUrlEncoded?: Array<{ name: string; value: string }>;
+    };
+    auth?: {
+      type: AuthType;
+      config: Record<string, string>;
+    };
+    query?: Record<string, string | number | boolean>;
+    folder?: string;
+    sequence?: number;
+  }): CreateRequestInput {
+    return {
+      collectionPath: args.collectionPath,
+      name: args.name,
+      method: args.method,
+      url: args.url,
+      headers: args.headers,
+      body: args.body
+        ? {
+            type: args.body.type,
+            content: args.body.content,
+            variables: args.body.variables,
+            formData: args.body.formData,
+            formUrlEncoded: args.body.formUrlEncoded,
+          }
+        : undefined,
+      auth: args.auth
+        ? {
+            type: args.auth.type,
+            config: args.auth.config,
+          }
+        : undefined,
+      query: args.query,
+      folder: args.folder,
+      sequence: args.sequence,
+    };
+  }
+
+  private textResult(text: string) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text,
+        },
+      ],
+    };
+  }
+
+  private errorResult(text: string) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Error: ${text}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  private getErrorMessage(action: string, error: unknown): string {
+    return error instanceof Error ? `Error ${action}: ${error.message}` : `Unknown error ${action}`;
   }
 }
 
