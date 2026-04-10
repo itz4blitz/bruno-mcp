@@ -134,7 +134,7 @@ export class BruGenerator {
   private generateHttpBlock(http: BruHttpRequest): string {
     const lines = [`${http.method.toLowerCase()} {`];
     lines.push(this.indent(`url: ${this.formatUrl(http.url)}`));
-    lines.push(this.indent(`body: ${http.body}`));
+    lines.push(this.indent(`body: ${this.formatHttpBodyMode(http.body)}`));
     lines.push(this.indent(`auth: ${http.auth}`));
     lines.push('}');
     return lines.join('\n');
@@ -289,6 +289,19 @@ export class BruGenerator {
       return lines.join('\n');
     }
 
+    if (body.type === 'binary' && body.filePath) {
+      const lines = ['body:file {'];
+      let fileValue = `@file(${body.filePath})`;
+
+      if (body.contentType) {
+        fileValue += ` @contentType(${body.contentType})`;
+      }
+
+      lines.push(this.indent(`file: ${fileValue}`));
+      lines.push('}');
+      return lines.join('\n');
+    }
+
     return '';
   }
 
@@ -408,6 +421,13 @@ export class BruGenerator {
    */
   private formatUrl(url: string): string {
     return url.trim();
+  }
+
+  /**
+   * Bruno uses `file` in the request block for binary uploads.
+   */
+  private formatHttpBodyMode(body: BruHttpRequest['body']): string {
+    return body === 'binary' ? 'file' : body;
   }
 
   /**

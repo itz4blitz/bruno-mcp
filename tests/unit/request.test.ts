@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -199,4 +199,46 @@ test('createRequest rejects invalid GraphQL variables JSON', async () => {
 
   assert.equal(result.success, false);
   assert.match(result.error || '', /GraphQL variables must be valid JSON/);
+});
+
+test('createRequest supports binary request bodies', async () => {
+  const rootPath = await import('node:fs/promises').then(({ mkdtemp }) =>
+    mkdtemp(join(tmpdir(), 'bruno-request-')),
+  );
+  const collectionManager = createCollectionManager();
+  const requestBuilder = createRequestBuilder();
+
+  const collection = await collectionManager.createCollection({
+    name: 'request-binary-tests',
+    outputPath: rootPath,
+  });
+
+  assert.equal(collection.success, true);
+  const collectionPath = collection.path as string;
+  const payloadPath = join(rootPath, 'payload.bin');
+  await writeFile(payloadPath, Buffer.from([0x00, 0x01, 0x02, 0xff]));
+
+  const created = await requestBuilder.createRequest({
+    collectionPath,
+    name: 'Upload Artifact',
+    method: 'POST',
+    url: '{{baseUrl}}/binary',
+    body: {
+      type: 'binary',
+      filePath: payloadPath,
+      contentType: 'application/octet-stream',
+    },
+  });
+
+  assert.equal(created.success, true);
+
+  const content = await readFile(created.path as string, 'utf8');
+  assert.match(content, /body:file \{/);
+  assert.match(content, /@file\(/);
+  assert.match(content, /@contentType\(application\/octet-stream\)/);
+
+  const loaded = await requestBuilder.loadRequest(created.path as string);
+  assert.equal(loaded.body?.type, 'binary');
+  assert.equal(loaded.body?.filePath, payloadPath);
+  assert.equal(loaded.body?.contentType, 'application/octet-stream');
 });

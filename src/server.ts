@@ -32,12 +32,15 @@ const BODY_VALUES = [
   'xml',
   'form-data',
   'form-urlencoded',
+  'binary',
   'graphql',
 ] as const;
 
 const requestBodySchema = z.object({
   type: z.enum(BODY_VALUES),
   content: z.string().optional(),
+  contentType: z.string().optional(),
+  filePath: z.string().optional(),
   variables: z.string().optional(),
   formData: z
     .array(
@@ -111,6 +114,16 @@ const createTestSuiteToolSchema: ToolSchema = {
       folder: z.string().optional(),
     }),
   ),
+  dependencies: z
+    .array(
+      z.object({
+        from: z.string().min(1, 'Source request name is required'),
+        to: z.string().min(1, 'Target request name is required'),
+        variable: z.string().min(1, 'Runtime variable name is required'),
+        sourcePath: z.string().optional(),
+      }),
+    )
+    .optional(),
 };
 
 const createCrudRequestsToolSchema: ToolSchema = {
@@ -235,6 +248,8 @@ export class BrunoMcpServer {
             body?: {
               type: BodyType;
               content?: string;
+              contentType?: string;
+              filePath?: string;
               variables?: string;
               formData?: Array<{
                 name: string;
@@ -298,7 +313,8 @@ export class BrunoMcpServer {
       'create_test_suite',
       {
         title: 'Create Test Suite',
-        description: 'Generate multiple related REST requests into a suite folder.',
+        description:
+          'Generate multiple related requests into a suite folder with optional runtime dependencies.',
         inputSchema: createTestSuiteToolSchema,
       },
       async (rawArgs) => {
@@ -306,15 +322,8 @@ export class BrunoMcpServer {
           const args = rawArgs as CreateTestSuiteInput;
           const results = [];
 
-          for (const [index, request] of args.requests.entries()) {
-            const result = await this.requestBuilder.createRequest(
-              this.toCreateRequestInput({
-                collectionPath: args.collectionPath,
-                ...request,
-                folder: request.folder || args.suiteName,
-                sequence: index + 1,
-              }),
-            );
+          for (const request of this.prepareSuiteRequests(args)) {
+            const result = await this.requestBuilder.createRequest(request);
             results.push({ name: request.name, result });
           }
 
@@ -485,6 +494,8 @@ export class BrunoMcpServer {
     body?: {
       type: BodyType;
       content?: string;
+      contentType?: string;
+      filePath?: string;
       variables?: string;
       formData?: Array<{ name: string; value: string; type?: 'text' | 'file' }>;
       formUrlEncoded?: Array<{ name: string; value: string }>;
@@ -496,6 +507,11 @@ export class BrunoMcpServer {
     query?: Record<string, string | number | boolean>;
     folder?: string;
     sequence?: number;
+    script?: {
+      'pre-request'?: string[];
+      'post-response'?: string[];
+    };
+    tests?: string[];
   }): CreateRequestInput {
     return {
       collectionPath: args.collectionPath,
@@ -507,6 +523,8 @@ export class BrunoMcpServer {
         ? {
             type: args.body.type,
             content: args.body.content,
+            contentType: args.body.contentType,
+            filePath: args.body.filePath,
             variables: args.body.variables,
             formData: args.body.formData,
             formUrlEncoded: args.body.formUrlEncoded,
@@ -521,7 +539,128 @@ export class BrunoMcpServer {
       query: args.query,
       folder: args.folder,
       sequence: args.sequence,
+      script: args.script,
+      tests: args.tests,
     };
+  }
+
+  /**
+   * Prepare suite requests with dependency-aware ordering and runtime variable extraction.
+   */
+  private prepareSuiteRequests(args: CreateTestSuiteInput): CreateRequestInput[] {
+    const preparedRequests = new Map<string, CreateRequestInput>();
+
+    for (const request of args.requests) {
+      if (preparedRequests.has(request.name)) {
+        throw new Error(`Duplicate request name in suite: ${request.name}`);
+      }
+
+      preparedRequests.set(
+        request.name,
+        this.toCreateRequestInput({
+          collectionPath: args.collectionPath,
+          ...request,
+          folder: request.folder || args.suiteName,
+        }),
+      );
+    }
+
+    for (const dependency of args.dependencies ?? []) {
+      const sourceRequest = preparedRequests.get(dependency.from);
+      const targetRequest = preparedRequests.get(dependency.to);
+
+      if (!sourceRequest) {
+        throw new Error(`Unknown dependency source request: ${dependency.from}`);
+      }
+
+      if (!targetRequest) {
+        throw new Error(`Unknown dependency target request: ${dependency.to}`);
+      }
+
+      const expression = this.buildDependencyExpression(
+        dependency.sourcePath || dependency.variable,
+      );
+      const generatedLine = `bru.setVar('${dependency.variable}', ${expression});`;
+      const existingLines = sourceRequest.script?.['post-response'] || [];
+
+      sourceRequest.script = {
+        ...sourceRequest.script,
+        'post-response': existingLines.includes(generatedLine)
+          ? existingLines
+          : [...existingLines, generatedLine],
+      };
+    }
+
+    return this.orderSuiteRequests(preparedRequests, args.dependencies ?? []);
+  }
+
+  /**
+   * Build a Bruno runtime variable extraction expression from a response path.
+   */
+  private buildDependencyExpression(sourcePath: string): string {
+    return sourcePath
+      .split('.')
+      .filter((segment) => segment.length > 0)
+      .reduce((expression, segment) => {
+        if (/^\d+$/.test(segment)) {
+          return `${expression}?.[${segment}]`;
+        }
+
+        if (/^[A-Za-z_$][\w$]*$/.test(segment)) {
+          return `${expression}?.${segment}`;
+        }
+
+        return `${expression}?.[${JSON.stringify(segment)}]`;
+      }, 'res.getBody()');
+  }
+
+  /**
+   * Order suite requests so dependency sources run before their targets.
+   */
+  private orderSuiteRequests(
+    requests: Map<string, CreateRequestInput>,
+    dependencies: NonNullable<CreateTestSuiteInput['dependencies']>,
+  ): CreateRequestInput[] {
+    const requestNames = [...requests.keys()];
+    const indexByName = new Map(requestNames.map((name, index) => [name, index]));
+    const outgoing = new Map(requestNames.map((name) => [name, [] as string[]]));
+    const indegree = new Map(requestNames.map((name) => [name, 0]));
+
+    for (const dependency of dependencies) {
+      outgoing.get(dependency.from)?.push(dependency.to);
+      indegree.set(dependency.to, (indegree.get(dependency.to) || 0) + 1);
+    }
+
+    const ready = requestNames.filter((name) => (indegree.get(name) || 0) === 0);
+    const orderedNames: string[] = [];
+
+    while (ready.length > 0) {
+      ready.sort((left, right) => (indexByName.get(left) || 0) - (indexByName.get(right) || 0));
+      const current = ready.shift();
+
+      if (!current) {
+        break;
+      }
+
+      orderedNames.push(current);
+
+      for (const target of outgoing.get(current) || []) {
+        const nextIndegree = (indegree.get(target) || 0) - 1;
+        indegree.set(target, nextIndegree);
+        if (nextIndegree === 0) {
+          ready.push(target);
+        }
+      }
+    }
+
+    if (orderedNames.length !== requestNames.length) {
+      throw new Error('Suite dependencies contain a cycle and cannot be ordered');
+    }
+
+    return orderedNames.map((name, index) => ({
+      ...requests.get(name)!,
+      sequence: index + 1,
+    }));
   }
 
   private textResult(text: string) {

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`bruno-mcp` provides an MCP server that creates and updates Bruno assets for REST APIs and GraphQL over HTTP.
+`bruno-mcp` provides an MCP server that creates and updates Bruno assets for REST APIs, GraphQL over HTTP, binary uploads, and dependency-aware HTTP suites.
 
 This spec reflects the current implemented and tested scope, not an aspirational future surface.
 
@@ -38,7 +38,7 @@ Creates HTTP-based `.bru` files with support for:
 - headers
 - query params
 - auth: `none`, `bearer`, `basic`, `oauth2`, `api-key`, `digest`
-- body types: `none`, `json`, `text`, `xml`, `form-data`, `form-urlencoded`, `graphql`
+- body types: `none`, `json`, `text`, `xml`, `form-data`, `form-urlencoded`, `binary`, `graphql`
 
 ### `add_test_script`
 
@@ -53,6 +53,8 @@ The update path preserves other supported request sections.
 ### `create_test_suite`
 
 Creates multiple related supported HTTP requests in a suite folder.
+
+Supports explicit dependencies between requests by generating runtime-variable extraction scripts with `bru.setVar(...)` and ordering requests so sources execute before targets.
 
 ### `create_crud_requests`
 
@@ -85,6 +87,7 @@ Returns:
 - `body:xml`
 - `body:multipart-form`
 - `body:form-urlencoded`
+- `body:file`
 - `body:graphql`
 - `body:graphql:vars`
 - `script:pre-request`
@@ -102,8 +105,6 @@ These are not implemented and should not be advertised as supported:
 
 - gRPC
 - WebSocket
-- binary body generation
-- dependency-aware suite generation
 
 ## Quality Gates
 

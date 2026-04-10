@@ -149,3 +149,46 @@ body:graphql:vars {
 `,
   );
 });
+
+test('generateBruFile emits Bruno-compatible binary file bodies', () => {
+  const bruFile: BruFile = {
+    meta: {
+      name: 'Upload Artifact',
+      type: 'http',
+      seq: 3,
+    },
+    http: {
+      method: 'POST',
+      url: '{{baseUrl}}/binary',
+      body: 'binary',
+      auth: 'none',
+    },
+    body: {
+      type: 'binary',
+      filePath: '/tmp/payload.bin',
+      contentType: 'application/octet-stream',
+    },
+  };
+
+  const generated = generateBruFile(bruFile);
+
+  assert.equal(
+    generated,
+    `meta {
+  name: 'Upload Artifact'
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/binary
+  body: file
+  auth: none
+}
+
+body:file {
+  file: @file(/tmp/payload.bin) @contentType(application/octet-stream)
+}
+`,
+  );
+});

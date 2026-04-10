@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -118,6 +118,127 @@ test('generated GraphQL requests execute successfully with bru run', async (t) =
   assert.match(server.requests[0].body, /ListUsers/);
   assert.match(server.requests[0].body, /"variables"/);
   assert.match(server.requests[0].body, /"limit":5/);
+});
+
+test('generated binary requests execute successfully with bru run', async (t) => {
+  const server = await createTestServer();
+  const session = await createMcpTestClient();
+  const rootPath = await mkdtemp(join(tmpdir(), 'bruno-acceptance-binary-'));
+  const payloadPath = join(rootPath, 'payload.bin');
+  await writeFile(payloadPath, Buffer.from([0x00, 0x01, 0x02, 0xff]));
+
+  t.after(async () => {
+    await session.close();
+    await server.close();
+  });
+
+  await callToolText(session.client, 'create_collection', {
+    name: 'binary-api',
+    outputPath: rootPath,
+  });
+
+  const collectionPath = join(rootPath, 'binary-api');
+
+  await callToolText(session.client, 'create_environment', {
+    collectionPath,
+    name: 'test',
+    variables: {
+      baseUrl: server.baseUrl,
+    },
+  });
+
+  await callToolText(session.client, 'create_request', {
+    collectionPath,
+    name: 'Upload Binary',
+    method: 'POST',
+    url: '{{baseUrl}}/binary',
+    body: {
+      type: 'binary',
+      filePath: payloadPath,
+      contentType: 'application/octet-stream',
+    },
+  });
+
+  await callToolText(session.client, 'add_test_script', {
+    bruFilePath: join(collectionPath, 'upload-binary.bru'),
+    scriptType: 'tests',
+    script: `test("status is 201", function () {
+  expect(res.status).to.equal(201);
+});`,
+  });
+
+  const result = await runBru(collectionPath);
+
+  assert.equal(result.exitCode, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /upload-binary/);
+  assert.equal(server.requests.length, 1);
+  assert.deepEqual([...server.requests[0].bodyBuffer], [0x00, 0x01, 0x02, 0xff]);
+});
+
+test('dependency-aware suites pass runtime variables between generated requests', async (t) => {
+  const server = await createTestServer();
+  const session = await createMcpTestClient();
+  const rootPath = await mkdtemp(join(tmpdir(), 'bruno-acceptance-suite-'));
+
+  t.after(async () => {
+    await session.close();
+    await server.close();
+  });
+
+  await callToolText(session.client, 'create_collection', {
+    name: 'suite-api',
+    outputPath: rootPath,
+  });
+
+  const collectionPath = join(rootPath, 'suite-api');
+
+  await callToolText(session.client, 'create_environment', {
+    collectionPath,
+    name: 'test',
+    variables: {
+      baseUrl: server.baseUrl,
+    },
+  });
+
+  await callToolText(session.client, 'create_test_suite', {
+    collectionPath,
+    suiteName: 'widget-flow',
+    requests: [
+      {
+        name: 'Create Widget For Suite',
+        method: 'POST',
+        url: '{{baseUrl}}/api/widgets',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: {
+          type: 'json',
+          content: '{\n  "name": "Suite Widget"\n}',
+        },
+      },
+      {
+        name: 'Fetch Widget For Suite',
+        method: 'GET',
+        url: '{{baseUrl}}/api/widgets/{{widgetId}}',
+      },
+    ],
+    dependencies: [
+      {
+        from: 'Create Widget For Suite',
+        to: 'Fetch Widget For Suite',
+        variable: 'widgetId',
+        sourcePath: 'id',
+      },
+    ],
+  });
+
+  const result = await runBru(collectionPath);
+
+  assert.equal(result.exitCode, 0, result.stderr || result.stdout);
+  assert.equal(server.requests.length, 2);
+  assert.equal(server.requests[0].method, 'POST');
+  assert.equal(server.requests[1].method, 'GET');
+  assert.equal(server.requests[1].url, '/api/widgets/123');
 });
 
 async function runBru(

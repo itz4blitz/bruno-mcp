@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -85,6 +85,55 @@ test('MCP server exposes working Bruno collection tools over stdio', async (t) =
   });
   assert.match(crudText, /Created CRUD request set/);
 
+  const payloadPath = join(rootPath, 'payload.bin');
+  await writeFile(payloadPath, Buffer.from([0x00, 0x01, 0x02, 0xff]));
+
+  const binaryText = await callToolText(session.client, 'create_request', {
+    collectionPath,
+    name: 'Upload Binary',
+    method: 'POST',
+    url: '{{baseUrl}}/binary',
+    body: {
+      type: 'binary',
+      filePath: payloadPath,
+      contentType: 'application/octet-stream',
+    },
+  });
+  assert.match(binaryText, /Created request/);
+
+  const suiteText = await callToolText(session.client, 'create_test_suite', {
+    collectionPath,
+    suiteName: 'widget-flow',
+    requests: [
+      {
+        name: 'Create Widget For Suite',
+        method: 'POST',
+        url: '{{baseUrl}}/api/widgets',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: {
+          type: 'json',
+          content: '{\n  "name": "Suite Widget"\n}',
+        },
+      },
+      {
+        name: 'Fetch Widget For Suite',
+        method: 'GET',
+        url: '{{baseUrl}}/api/widgets/{{widgetId}}',
+      },
+    ],
+    dependencies: [
+      {
+        from: 'Create Widget For Suite',
+        to: 'Fetch Widget For Suite',
+        variable: 'widgetId',
+        sourcePath: 'id',
+      },
+    ],
+  });
+  assert.match(suiteText, /Created test suite/);
+
   const listCollectionsText = await callToolText(session.client, 'list_collections', {
     path: rootPath,
   });
@@ -93,9 +142,9 @@ test('MCP server exposes working Bruno collection tools over stdio', async (t) =
   const statsText = await callToolText(session.client, 'get_collection_stats', {
     collectionPath,
   });
-  assert.match(statsText, /Total requests: 7/);
-  assert.match(statsText, /GET: 3/);
-  assert.match(statsText, /POST: 2/);
+  assert.match(statsText, /Total requests: 10/);
+  assert.match(statsText, /GET: 4/);
+  assert.match(statsText, /POST: 4/);
   assert.match(statsText, /PUT: 1/);
   assert.match(statsText, /DELETE: 1/);
 
@@ -106,4 +155,14 @@ test('MCP server exposes working Bruno collection tools over stdio', async (t) =
   const graphqlFile = await readFile(join(collectionPath, 'list-users-graphql.bru'), 'utf8');
   assert.match(graphqlFile, /body:graphql \{/);
   assert.match(graphqlFile, /body:graphql:vars \{/);
+
+  const binaryFile = await readFile(join(collectionPath, 'upload-binary.bru'), 'utf8');
+  assert.match(binaryFile, /body:file \{/);
+  assert.match(binaryFile, /@contentType\(application\/octet-stream\)/);
+
+  const suiteSourceFile = await readFile(
+    join(collectionPath, 'widget-flow', 'create-widget-for-suite.bru'),
+    'utf8',
+  );
+  assert.match(suiteSourceFile, /bru.setVar\('widgetId', res.getBody\(\)\?\.id\);/);
 });

@@ -333,6 +333,24 @@ export class RequestBuilder {
       bruFile.auth = auth;
     }
 
+    if (input.script?.['pre-request'] || input.script?.['post-response']) {
+      bruFile.script = {};
+
+      if (input.script['pre-request']) {
+        bruFile.script['pre-request'] = { exec: input.script['pre-request'] };
+      }
+
+      if (input.script['post-response']) {
+        bruFile.script['post-response'] = {
+          exec: input.script['post-response'],
+        };
+      }
+    }
+
+    if (input.tests && input.tests.length > 0) {
+      bruFile.tests = { exec: input.tests };
+    }
+
     return bruFile;
   }
 
@@ -382,7 +400,7 @@ export class RequestBuilder {
       http: {
         method: httpBlock.name.toUpperCase() as HttpMethod,
         url: this.toStringValue(httpFields.url) || '',
-        body: (this.toStringValue(httpFields.body) as BodyType) || 'none',
+        body: this.parseHttpBodyMode(this.toStringValue(httpFields.body)),
         auth: (this.toStringValue(httpFields.auth) as AuthType) || 'none',
       },
     };
@@ -547,6 +565,10 @@ export class RequestBuilder {
       this.validateJsonString(input.body.variables, 'GraphQL variables must be valid JSON');
     }
 
+    if (input.body?.type === 'binary' && !input.body.filePath?.trim()) {
+      throw new BrunoError('Binary body requires a file path', 'VALIDATION_ERROR');
+    }
+
     if (input.auth && input.auth.type !== 'none') {
       this.validateAuthConfig(input.auth.type, input.auth.config);
     }
@@ -592,6 +614,8 @@ export class RequestBuilder {
     const body: BruBody = {
       type: input.type,
       content: input.content,
+      contentType: input.contentType,
+      filePath: input.filePath,
       variables: input.variables,
     };
 
@@ -724,6 +748,11 @@ export class RequestBuilder {
           }),
         ),
       };
+    }
+
+    const binaryBody = this.getBlock(blocks, 'body:file');
+    if (binaryBody) {
+      return this.parseBinaryBody(binaryBody.content);
     }
 
     const graphqlBody = this.getBlock(blocks, 'body:graphql');
@@ -917,6 +946,17 @@ export class RequestBuilder {
   }
 
   /**
+   * Normalize the body mode used in the HTTP block.
+   */
+  private parseHttpBodyMode(value: string | undefined): BodyType {
+    if (value === 'file') {
+      return 'binary';
+    }
+
+    return (value as BodyType) || 'none';
+  }
+
+  /**
    * Validate that a user-provided JSON string is parseable.
    */
   private validateJsonString(value: string, message: string): void {
@@ -925,6 +965,32 @@ export class RequestBuilder {
     } catch {
       throw new BrunoError(message, 'VALIDATION_ERROR');
     }
+  }
+
+  /**
+   * Parse a Bruno binary file body block.
+   */
+  private parseBinaryBody(content: string): BruBody {
+    const normalized = this.normalizeBlockContent(content);
+    const fileLine = normalized
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0 && !line.startsWith('~file:') && line.startsWith('file:'));
+
+    if (!fileLine) {
+      throw new BrunoError('Binary body block must contain a file entry', 'VALIDATION_ERROR');
+    }
+
+    const match = fileLine.match(/^file:\s*@file\(([^)]+)\)(?:\s+@contentType\(([^)]+)\))?$/);
+    if (!match) {
+      throw new BrunoError('Unsupported binary body syntax', 'VALIDATION_ERROR');
+    }
+
+    return {
+      type: 'binary',
+      filePath: match[1],
+      contentType: match[2],
+    };
   }
 
   /**

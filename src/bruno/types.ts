@@ -14,6 +14,7 @@ export type BodyType =
   | 'xml'
   | 'form-data'
   | 'form-urlencoded'
+  | 'binary'
   | 'graphql';
 
 // Bruno Collection Configuration (bruno.json)
@@ -83,6 +84,8 @@ export interface BruBody {
   type: BodyType;
   content?: string;
   variables?: string;
+  filePath?: string;
+  contentType?: string;
   formData?: Array<{
     name: string;
     value: string;
@@ -154,6 +157,8 @@ export interface CreateRequestInput {
     type: BodyType;
     content?: string;
     variables?: string;
+    filePath?: string;
+    contentType?: string;
     formData?: Array<{
       name: string;
       value: string;
@@ -171,6 +176,11 @@ export interface CreateRequestInput {
   query?: Record<string, string | number | boolean>;
   folder?: string;
   sequence?: number;
+  script?: {
+    'pre-request'?: string[];
+    'post-response'?: string[];
+  };
+  tests?: string[];
 }
 
 // Collection creation input
@@ -209,6 +219,8 @@ export interface CreateTestSuiteInput {
       type: BodyType;
       content?: string;
       variables?: string;
+      filePath?: string;
+      contentType?: string;
       formData?: Array<{
         name: string;
         value: string;
@@ -225,6 +237,12 @@ export interface CreateTestSuiteInput {
     };
     query?: Record<string, string | number | boolean>;
     folder?: string;
+  }>;
+  dependencies?: Array<{
+    from: string;
+    to: string;
+    variable: string;
+    sourcePath?: string;
   }>;
 }
 

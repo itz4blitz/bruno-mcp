@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 
 type RecordedRequest = {
   body: string;
+  bodyBuffer: Buffer;
   headers: IncomingMessage['headers'];
   method: string;
   url: string;
@@ -11,9 +12,11 @@ export async function createTestServer() {
   const requests: RecordedRequest[] = [];
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const body = await readBody(req);
+    const bodyBuffer = await readBody(req);
+    const body = bodyBuffer.toString('utf8');
     requests.push({
       body,
+      bodyBuffer,
       headers: req.headers,
       method: req.method || 'GET',
       url: req.url || '/',
@@ -36,6 +39,11 @@ export async function createTestServer() {
 
     if (req.method === 'POST' && req.url === '/api/widgets') {
       respondJson(res, 201, { id: 123, name: 'Created Widget' });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/binary') {
+      respondJson(res, 201, { bytes: bodyBuffer.length });
       return;
     }
 
@@ -88,14 +96,14 @@ export async function createTestServer() {
   };
 }
 
-async function readBody(req: IncomingMessage): Promise<string> {
+async function readBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
 
   for await (const chunk of req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
 
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
 
 function respondJson(res: ServerResponse, statusCode: number, body: unknown): void {

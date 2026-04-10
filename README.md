@@ -1,14 +1,16 @@
 # Bruno MCP Server
 
-`bruno-mcp` is an MCP server for generating Bruno collections, environments, and request files, with proven REST support and minimal GraphQL-over-HTTP support.
+`bruno-mcp` is an MCP server for generating Bruno collections, environments, and request files, with verified REST, GraphQL-over-HTTP, binary upload, and dependency-aware suite support.
 
 It is intentionally scoped to the Bruno features this repo currently proves in CI:
 
 - REST request generation
 - GraphQL-over-HTTP request generation
+- binary file body generation
 - Bruno-compatible environment files
 - request script and test block insertion
 - CRUD request scaffolding
+- dependency-aware suite generation via runtime vars
 - collection discovery and request stats
 - MCP stdio integration tests
 - Bruno CLI acceptance tests using `bru run`
@@ -20,16 +22,15 @@ It is intentionally scoped to the Bruno features this repo currently proves in C
 - HTTP methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`
 - Request features: headers, query params, folders, sequence numbers
 - Auth: `none`, `bearer`, `basic`, `oauth2`, `api-key`, `digest`
-- Bodies: `none`, `json`, `text`, `xml`, `form-data`, `form-urlencoded`, `graphql`
+- Bodies: `none`, `json`, `text`, `xml`, `form-data`, `form-urlencoded`, `binary`, `graphql`
 - Environment vars via `vars {}` files
 - Script blocks: `script:pre-request`, `script:post-response`, `tests`
+- `create_test_suite` with explicit request dependencies and generated `bru.setVar(...)` chaining
 
 ### Not supported yet
 
 - gRPC
 - WebSocket
-- binary request bodies
-- dependency-aware suite generation
 
 ## Requirements
 
@@ -129,13 +130,65 @@ GraphQL request:
 }
 ```
 
+Binary upload request:
+
+```json
+{
+  "collectionPath": "./collections/upload-api",
+  "name": "Upload Artifact",
+  "method": "POST",
+  "url": "{{baseUrl}}/binary",
+  "body": {
+    "type": "binary",
+    "filePath": "./fixtures/payload.bin",
+    "contentType": "application/octet-stream"
+  }
+}
+```
+
+Dependency-aware suite:
+
+```json
+{
+  "collectionPath": "./collections/shop-api",
+  "suiteName": "widget-flow",
+  "requests": [
+    {
+      "name": "Create Widget",
+      "method": "POST",
+      "url": "{{baseUrl}}/api/widgets",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "type": "json",
+        "content": "{\n  \"name\": \"Widget\"\n}"
+      }
+    },
+    {
+      "name": "Fetch Widget",
+      "method": "GET",
+      "url": "{{baseUrl}}/api/widgets/{{widgetId}}"
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "Create Widget",
+      "to": "Fetch Widget",
+      "variable": "widgetId",
+      "sourcePath": "id"
+    }
+  ]
+}
+```
+
 ## Verification
 
 The repo now verifies behavior at three levels:
 
 1. Unit tests for BRU generation and collection/request helpers.
 2. MCP integration tests against the real stdio server.
-3. Bruno CLI acceptance tests that generate collections and run them with `bru run` against local REST and GraphQL test endpoints.
+3. Bruno CLI acceptance tests that generate collections and run them with `bru run` against local REST, GraphQL, binary upload, and dependency-chain test endpoints.
 
 Run the full gate locally:
 
