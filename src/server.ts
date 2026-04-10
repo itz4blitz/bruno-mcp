@@ -12,6 +12,18 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { createCollectionManager } from './bruno/collection.js';
+import {
+  createFeatureSliceManager,
+  DynamicDataPolicy,
+  FEATURE_SLICE_OVERLAY_VALUES,
+  FEATURE_SLICE_TYPE_VALUES,
+  FeatureRunProfile,
+  FeatureSliceType,
+  MatrixScenarioDelta,
+  RunFeatureSliceInput,
+  SliceFinding,
+  SupportRequestRole,
+} from './bruno/feature-slice.js';
 import { createBrunoNativeManager } from './bruno/native.js';
 import { createRequestBuilder } from './bruno/request.js';
 import { createWorkspaceManager } from './bruno/workspace.js';
@@ -265,9 +277,129 @@ const workspaceEnvironmentToolSchema: ToolSchema = {
   unset: z.array(z.string()).optional(),
 };
 
+const SUPPORT_ROLE_VALUES = ['auth', 'cleanup', 'lookup', 'resolve', 'seed'] as const;
+
+const dynamicDataPolicySchema = z.object({
+  fakerProfile: z.enum(['commerce', 'person', 'simple']).optional(),
+  mode: z.enum(['builtin', 'faker']).optional(),
+  persistAsVars: z.boolean().optional(),
+  scope: z.enum(['bruno-runtime', 'mcp']).optional(),
+});
+
+const matrixScenarioSchema = z.object({
+  caseId: z.string().optional(),
+  scenarioId: z.string().min(1, 'Scenario id is required'),
+  delta: z
+    .object({
+      removePaths: z.array(z.string().min(1)).optional(),
+      set: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+    })
+    .optional(),
+  expectedStatus: z.number().int(),
+  expectedOutcome: z.string().min(1, 'Expected outcome is required'),
+  field: z.string().optional(),
+  notes: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  value: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
+});
+
+const sliceFindingSchema = z.object({
+  evidence: z.string().optional(),
+  expectedBehavior: z.string().optional(),
+  kind: z.enum(['collection-defect', 'coverage-gap', 'design-warning', 'product-defect']),
+  observedBehavior: z.string().optional(),
+  recommendedAction: z.string().optional(),
+  requestPath: z.string().optional(),
+  severity: z.enum(['high', 'medium', 'low']),
+  title: z.string().min(1, 'Finding title is required'),
+});
+
+const inspectFeatureSliceToolSchema: ToolSchema = {
+  workspacePath: z.string().optional(),
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  featureName: z.string().min(1, 'Feature name is required'),
+  basePath: z.string().optional(),
+};
+
+const planFeatureSliceToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  featureName: z.string().min(1, 'Feature name is required'),
+  featureType: z.enum(FEATURE_SLICE_TYPE_VALUES),
+  targetResource: z.string().optional(),
+  basePath: z.string().optional(),
+  sourceOfTruth: z.string().optional(),
+  overlay: z.enum(FEATURE_SLICE_OVERLAY_VALUES).optional(),
+  strictMode: z.boolean().optional(),
+  convenienceMode: z.boolean().optional(),
+};
+
+const scaffoldFeatureSliceToolSchema: ToolSchema = {
+  ...planFeatureSliceToolSchema,
+  includeSupportRequests: z.boolean().optional(),
+  includeMatrices: z.boolean().optional(),
+  dataPolicy: dynamicDataPolicySchema.optional(),
+};
+
+const scaffoldMatrixRequestToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  sliceId: z.string().min(1, 'Slice id is required'),
+  requestFolder: z.string().min(1, 'Request folder is required'),
+  requestName: z.string().min(1, 'Request name is required'),
+  requestUrl: z.string().min(1, 'Request URL is required'),
+  category: z.enum(['negative', 'security']),
+  basePayload: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  scenarioDeltas: z.array(matrixScenarioSchema).min(1, 'At least one scenario is required'),
+  requiredIterationFields: z.array(z.string().min(1)).min(1),
+  allowedDeltaPaths: z.array(z.string().min(1)).min(1),
+  strictMode: z.boolean().optional(),
+};
+
+const scaffoldSupportRequestsToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  featureName: z.string().min(1, 'Feature name is required'),
+  targetResource: z.string().optional(),
+  strictMode: z.boolean().optional(),
+  supportKinds: z.array(z.enum(SUPPORT_ROLE_VALUES)).min(1, 'Support kinds are required'),
+};
+
+const auditFeatureSliceToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  sliceId: z.string().min(1, 'Slice id is required'),
+  sourceOfTruth: z.string().optional(),
+  overlay: z.string().optional(),
+};
+
+const recordSliceFindingsToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  sliceId: z.string().min(1, 'Slice id is required'),
+  findings: z.array(sliceFindingSchema),
+  writeMode: z.enum(['docs-only', 'request-docs', 'slice-manifest']).optional(),
+};
+
+const refreshGeneratedDataToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  sliceId: z.string().min(1, 'Slice id is required'),
+  policy: dynamicDataPolicySchema.optional(),
+};
+
+const generateFeatureRunManifestToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  sliceId: z.string().min(1, 'Slice id is required'),
+};
+
+const runFeatureSliceToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  sliceId: z.string().min(1, 'Slice id is required'),
+  env: z.string().min(1, 'Environment is required'),
+  profile: z.enum(['smoke', 'full', 'negative_only', 'security_only', 'support_only']).optional(),
+  workspacePath: z.string().optional(),
+  globalEnv: z.string().optional(),
+};
+
 export class BrunoMcpServer {
   private server: McpServer;
   private collectionManager;
+  private featureSliceManager;
   private nativeManager;
   private requestBuilder;
   private workspaceManager;
@@ -300,6 +432,11 @@ export class BrunoMcpServer {
     this.nativeManager = createBrunoNativeManager();
     this.requestBuilder = createRequestBuilder();
     this.workspaceManager = createWorkspaceManager();
+    this.featureSliceManager = createFeatureSliceManager(
+      this.nativeManager,
+      this.requestBuilder,
+      this.workspaceManager,
+    );
 
     this.setupTools();
   }
@@ -321,6 +458,7 @@ export class BrunoMcpServer {
     this.setupFolderTools();
     this.setupRequestCrudTools();
     this.setupEnvironmentCrudTools();
+    this.setupFeatureSliceTools();
     this.setupResources();
     this.setupPrompts();
   }
@@ -1305,6 +1443,282 @@ export class BrunoMcpServer {
     );
   }
 
+  private setupFeatureSliceTools(): void {
+    this.server.registerTool(
+      'inspect_feature_slice_context',
+      {
+        title: 'Inspect Feature Slice Context',
+        description:
+          'Inspect workspace and collection state, related requests, and missing Bruno-native coverage for a feature slice.',
+        inputSchema: inspectFeatureSliceToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            basePath?: string;
+            collectionPath: string;
+            featureName: string;
+            workspacePath?: string;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          if (args.workspacePath) {
+            await this.assertPathAllowed(args.workspacePath, 'Workspace path');
+          }
+          const result = await this.featureSliceManager.inspectContext(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('inspecting feature slice context', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'plan_feature_slice',
+      {
+        title: 'Plan Feature Slice',
+        description:
+          'Propose a deterministic feature slice structure, support requests, matrices, cleanup truth, and required inputs.',
+        inputSchema: planFeatureSliceToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            basePath?: string;
+            collectionPath: string;
+            convenienceMode?: boolean;
+            featureName: string;
+            featureType: FeatureSliceType;
+            overlay?: string;
+            sourceOfTruth?: string;
+            strictMode?: boolean;
+            targetResource?: string;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.planFeatureSlice(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('planning feature slice', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'scaffold_feature_slice',
+      {
+        title: 'Scaffold Feature Slice',
+        description:
+          'Create support folders, happy path/read/negative/security requests, strict matrix assets, docs, and findings scaffolding.',
+        inputSchema: scaffoldFeatureSliceToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            basePath?: string;
+            collectionPath: string;
+            convenienceMode?: boolean;
+            dataPolicy?: DynamicDataPolicy;
+            featureName: string;
+            featureType: FeatureSliceType;
+            includeMatrices?: boolean;
+            includeSupportRequests?: boolean;
+            overlay?: string;
+            sourceOfTruth?: string;
+            strictMode?: boolean;
+            targetResource?: string;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.scaffoldFeatureSlice(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('scaffolding feature slice', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'scaffold_matrix_request',
+      {
+        title: 'Scaffold Matrix Request',
+        description:
+          'Create a strict matrix request and scenario file using base valid payload plus scenario deltas.',
+        inputSchema: scaffoldMatrixRequestToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            allowedDeltaPaths: string[];
+            basePayload: Record<string, string | number | boolean | null>;
+            category: 'negative' | 'security';
+            collectionPath: string;
+            requestFolder: string;
+            requestName: string;
+            requestUrl: string;
+            requiredIterationFields: string[];
+            scenarioDeltas: MatrixScenarioDelta[];
+            sliceId: string;
+            strictMode?: boolean;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.scaffoldMatrixRequest(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('scaffolding matrix request', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'scaffold_support_requests',
+      {
+        title: 'Scaffold Support Requests',
+        description:
+          'Create explicit auth, seed, resolve, lookup, or cleanup support requests for a feature slice.',
+        inputSchema: scaffoldSupportRequestsToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            collectionPath: string;
+            featureName: string;
+            strictMode?: boolean;
+            supportKinds: SupportRequestRole[];
+            targetResource?: string;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.scaffoldSupportRequests(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('scaffolding support requests', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'audit_feature_slice',
+      {
+        title: 'Audit Feature Slice',
+        description:
+          'Audit a feature slice for missing coverage, collection defects, product defects, and cleanup truth gaps.',
+        inputSchema: auditFeatureSliceToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            collectionPath: string;
+            overlay?: string;
+            sliceId: string;
+            sourceOfTruth?: string;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.auditFeatureSlice(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('auditing feature slice', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'record_slice_findings',
+      {
+        title: 'Record Slice Findings',
+        description:
+          'Persist feature-slice findings into the slice manifest and documentation without weakening assertions.',
+        inputSchema: recordSliceFindingsToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            collectionPath: string;
+            findings: SliceFinding[];
+            sliceId: string;
+            writeMode?: 'docs-only' | 'request-docs' | 'slice-manifest';
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          for (const finding of args.findings) {
+            if (finding.requestPath) {
+              await this.assertPathAllowed(finding.requestPath, 'Finding request path');
+            }
+          }
+          const result = await this.featureSliceManager.recordFindings(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('recording slice findings', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'refresh_generated_data',
+      {
+        title: 'Refresh Generated Data',
+        description:
+          'Generate fresh deterministic unique data for a feature slice using builtin or faker-backed MCP-side generation.',
+        inputSchema: refreshGeneratedDataToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            collectionPath: string;
+            policy?: DynamicDataPolicy;
+            sliceId: string;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.refreshGeneratedData(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('refreshing generated data', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'generate_feature_run_manifest',
+      {
+        title: 'Generate Feature Run Manifest',
+        description:
+          'Generate or refresh the ordered automation manifest for a feature slice, including phases, profiles, and cleanup metadata.',
+        inputSchema: generateFeatureRunManifestToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { collectionPath: string; sliceId: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.featureSliceManager.generateRunManifest(
+            args.collectionPath,
+            args.sliceId,
+          );
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('generating feature run manifest', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'run_feature_slice',
+      {
+        title: 'Run Feature Slice',
+        description:
+          'Run a feature slice end to end using its generated manifest and aggregate setup, collection, product, and cleanup results truthfully.',
+        inputSchema: runFeatureSliceToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as RunFeatureSliceInput & { profile?: FeatureRunProfile };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          if (args.workspacePath) {
+            await this.assertPathAllowed(args.workspacePath, 'Workspace path');
+          }
+          const result = await this.featureSliceManager.runFeatureSlice(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('running feature slice', error));
+        }
+      },
+    );
+  }
+
   private setupResources(): void {
     this.server.registerResource(
       'bruno_capabilities',
@@ -1317,13 +1731,23 @@ export class BrunoMcpServer {
       async (uri) =>
         this.jsonResource(uri.toString(), {
           features: {
-            generations: ['classic collections', 'REST', 'GraphQL over HTTP', 'binary uploads'],
+            generations: [
+              'classic collections',
+              'REST',
+              'GraphQL over HTTP',
+              'binary uploads',
+              'feature slice planning',
+              'feature slice scaffolding',
+              'strict matrices',
+            ],
             metadata: [
               'workspace',
               'collection defaults',
               'folder defaults',
               'request CRUD',
               'environments',
+              'slice findings',
+              'cleanup truth',
             ],
             protocols: ['tools', 'resources', 'prompts', 'prompt completions'],
           },
@@ -1376,6 +1800,64 @@ export class BrunoMcpServer {
           folders,
           requests,
         });
+      },
+    );
+
+    this.server.registerResource(
+      'bruno_slice',
+      new ResourceTemplate('bruno://slice/{+collectionPath}/{sliceId}', {
+        complete: {
+          collectionPath: async (value) => this.completeCollectionPaths(String(value || '')),
+          sliceId: async (value, context) => {
+            const collectionPath = context?.arguments?.collectionPath;
+            if (typeof collectionPath !== 'string' || collectionPath.length === 0) {
+              return [];
+            }
+            return this.completeSliceIds(collectionPath, String(value || ''));
+          },
+        },
+        list: undefined,
+      }),
+      {
+        description: 'Read-only summary of a feature slice manifest and audit state.',
+        mimeType: 'application/json',
+        title: 'Bruno Feature Slice',
+      },
+      async (uri, variables) => {
+        const collectionPath = this.getTemplateVariable(variables, 'collectionPath');
+        const sliceId = this.getTemplateVariable(variables, 'sliceId');
+        await this.assertPathAllowed(collectionPath, 'Collection path');
+        const slice = await this.featureSliceManager.getSliceState(collectionPath, sliceId);
+        return this.jsonResource(uri.toString(), slice);
+      },
+    );
+
+    this.server.registerResource(
+      'bruno_slice_run_manifest',
+      new ResourceTemplate('bruno://slice-run-manifest/{+collectionPath}/{sliceId}', {
+        complete: {
+          collectionPath: async (value) => this.completeCollectionPaths(String(value || '')),
+          sliceId: async (value, context) => {
+            const collectionPath = context?.arguments?.collectionPath;
+            if (typeof collectionPath !== 'string' || collectionPath.length === 0) {
+              return [];
+            }
+            return this.completeSliceIds(collectionPath, String(value || ''));
+          },
+        },
+        list: undefined,
+      }),
+      {
+        description: 'Read-only ordered run manifest for a feature slice.',
+        mimeType: 'application/json',
+        title: 'Bruno Feature Slice Run Manifest',
+      },
+      async (uri, variables) => {
+        const collectionPath = this.getTemplateVariable(variables, 'collectionPath');
+        const sliceId = this.getTemplateVariable(variables, 'sliceId');
+        await this.assertPathAllowed(collectionPath, 'Collection path');
+        const manifest = await this.featureSliceManager.generateRunManifest(collectionPath, sliceId);
+        return this.jsonResource(uri.toString(), manifest);
       },
     );
 
@@ -1435,6 +1917,53 @@ export class BrunoMcpServer {
   }
 
   private setupPrompts(): void {
+    this.server.registerPrompt(
+      'build_feature_slice',
+      {
+        title: 'Build Feature Slice',
+        description:
+          'Create a prompt for building a Bruno feature slice with explicit support requests, strict matrices, cleanup truth, and findings.',
+        argsSchema: {
+          collectionPath: completable(z.string().min(1), async (value) =>
+            this.completeCollectionPaths(String(value || '')),
+          ),
+          featureName: z.string().min(1),
+          featureType: completable(z.string().min(1), async (value) =>
+            this.completeStaticValues(String(value || ''), [...FEATURE_SLICE_TYPE_VALUES]),
+          ),
+          strictMode: z.boolean().optional(),
+          overlay: completable(z.string().optional(), async (value) =>
+            this.completeStaticValues(String(value || ''), [...FEATURE_SLICE_OVERLAY_VALUES]),
+          ),
+        },
+      },
+      async (args) => ({
+        description: 'Prompt for building a Bruno feature slice end to end.',
+        messages: [
+          {
+            content: {
+              text: `Build a Bruno feature slice in collection \`${args.collectionPath}\` for feature \`${args.featureName}\`.
+
+Feature type: \`${args.featureType}\`
+Strict mode: \`${args.strictMode !== false}\`
+Overlay: \`${args.overlay || 'none'}\`
+
+Requirements:
+- inspect workspace and collection state first
+- identify missing Bruno-native coverage
+- scaffold explicit support requests for auth, seed, resolve, and cleanup when needed
+- use strict matrix mode with one stable valid request payload plus scenario deltas only
+- generate truthful docs, tags, assertions, tests, defaults, and findings
+- distinguish collection defects from product defects
+- document cleanup truthfully with no fake passing or hidden skips`,
+              type: 'text',
+            },
+            role: 'user',
+          },
+        ],
+      }),
+    );
+
     this.server.registerPrompt(
       'generate_rest_feature',
       {
@@ -1880,6 +2409,21 @@ Prefer:
     try {
       const environments = await this.nativeManager.listEnvironments(collectionPath);
       return environments.filter((name) => name.toLowerCase().startsWith(prefix.toLowerCase()));
+    } catch {
+      return [];
+    }
+  }
+
+  private async completeSliceIds(collectionPath: string, prefix: string): Promise<string[]> {
+    try {
+      const slicesRoot = join(resolve(collectionPath), '.bruno-mcp', 'feature-slices');
+      const entries = await fs.readdir(slicesRoot, { withFileTypes: true });
+      return entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .filter((name) => name.toLowerCase().startsWith(prefix.toLowerCase()))
+        .toSorted()
+        .slice(0, 50);
     } catch {
       return [];
     }

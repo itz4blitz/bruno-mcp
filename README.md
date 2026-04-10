@@ -57,6 +57,10 @@ This fork is built around that philosophy.
 ### Expose richer MCP features
 
 - tools for deterministic mutation
+- feature-slice planning, scaffolding, auditing, and findings capture
+- strict matrix scaffolding with request-owned base payloads and scenario-delta files
+- explicit support request scaffolding with visible auth/seed/resolve/lookup/cleanup helpers
+- project overlay support for product-specific semantics such as raw/DTO behavior
 - resources for read-only Bruno state inspection
 - prompts for common workflows
 - argument completion for paths and styles
@@ -116,6 +120,14 @@ This fork is built around that philosophy.
 - `add_test_script`
 - `create_test_suite`
 - `create_crud_requests`
+- `inspect_feature_slice_context`
+- `plan_feature_slice`
+- `scaffold_feature_slice`
+- `scaffold_matrix_request`
+- `scaffold_support_requests`
+- `audit_feature_slice`
+- `record_slice_findings`
+- `refresh_generated_data`
 - `list_collections`
 - `get_collection_stats`
 - `get_workspace`
@@ -151,16 +163,28 @@ This fork is built around that philosophy.
 - `bruno://collection/{collectionPath}`
 - `bruno://request/{requestPath}`
 - `bruno://environment/{collectionPath}/{environmentName}`
+- `bruno://slice/{collectionPath}/{sliceId}`
 
 These are intended for inspection and model context, not mutation.
 
 ### MCP prompts
 
 - `generate_rest_feature`
+- `build_feature_slice`
 - `audit_bruno_collection`
 - `normalize_bruno_collection`
 
 These prompts support argument completion for common filesystem and workflow values.
+
+## Feature Slice Notes
+
+- strict matrix scenario files contain scenario deltas only
+- stable valid payloads remain owned by the Bruno request plus matrix metadata
+- support requests stay explicit rather than hiding branching in core requests
+- cleanup truth is documented as possible, conditional, or impossible without faking a passing cleanup path
+- project-specific semantics belong in overlays instead of generic Bruno logic
+
+See `docs/FEATURE_SLICE_AUTOMATION.md` for the automation-ready slice workflow and Branch example.
 
 ## What This Does Not Do
 

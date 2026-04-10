@@ -48,6 +48,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
+    "@faker-js/faker": "9.9.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@usebruno/filestore": "0.8.1",
     "yaml": "2.8.3",

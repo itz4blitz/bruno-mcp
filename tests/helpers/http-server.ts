@@ -10,6 +10,8 @@ type RecordedRequest = {
 
 export async function createTestServer() {
   const requests: RecordedRequest[] = [];
+  let nextUserId = 200;
+  const users = new Map<number, { description?: string; email?: string; id: number; name?: string }>();
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const bodyBuffer = await readBody(req);
@@ -54,6 +56,121 @@ export async function createTestServer() {
         },
       });
       return;
+    }
+
+    if (req.method === 'POST' && req.url === '/auth/login') {
+      const payload = body ? (JSON.parse(body) as { password?: string; username?: string }) : {};
+      if (payload.username === 'demo' && payload.password === 'demo') {
+        respondJson(res, 200, { token: 'demo-token' });
+        return;
+      }
+      respondJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+
+    if (req.url?.startsWith('/users')) {
+      const authHeader = req.headers.authorization;
+      const isAuthorized = authHeader === 'Bearer demo-token';
+      const url = new URL(`http://127.0.0.1${req.url}`);
+
+      if (req.method === 'POST' && url.pathname === '/users') {
+        const payload = body ? (JSON.parse(body) as Record<string, unknown>) : {};
+        if (!isAuthorized) {
+          respondJson(res, 401, { error: 'Unauthorized' });
+          return;
+        }
+        if (typeof payload.name !== 'string' || payload.name.trim().length === 0) {
+          respondJson(res, 400, { error: 'Name is required' });
+          return;
+        }
+        if (typeof payload.email !== 'string' || !payload.email.includes('@')) {
+          respondJson(res, 400, { error: 'Email is invalid' });
+          return;
+        }
+        if (payload.name.includes('<script>') || String(payload.description || '').includes(' OR 1=1')) {
+          respondJson(res, 400, { error: 'Security rejection' });
+          return;
+        }
+        const id = nextUserId++;
+        const user = {
+          description: typeof payload.description === 'string' ? payload.description : undefined,
+          email: String(payload.email),
+          id,
+          name: String(payload.name),
+        };
+        users.set(id, user);
+        respondJson(res, 201, user);
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/users') {
+        if (!isAuthorized) {
+          respondJson(res, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const lookup = url.searchParams.get('lookup');
+        const values = [...users.values()];
+        if (lookup) {
+          const matched = values.find((user) => user.name?.includes(lookup) || user.email?.includes(lookup));
+          respondJson(res, 200, matched ? { data: { id: matched.id } } : { items: [] });
+          return;
+        }
+        respondJson(res, 200, values);
+        return;
+      }
+
+      if (req.method === 'GET' && /^\/users\/\d+$/.test(url.pathname)) {
+        if (!isAuthorized) {
+          respondJson(res, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const id = Number(url.pathname.split('/').pop());
+        const user = users.get(id);
+        if (!user) {
+          respondJson(res, 404, { error: 'Not found' });
+          return;
+        }
+        respondJson(res, 200, user);
+        return;
+      }
+
+      if (req.method === 'PUT' && /^\/users\/\d+$/.test(url.pathname)) {
+        if (!isAuthorized) {
+          respondJson(res, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const id = Number(url.pathname.split('/').pop());
+        const existing = users.get(id);
+        if (!existing) {
+          respondJson(res, 404, { error: 'Not found' });
+          return;
+        }
+        const payload = body ? (JSON.parse(body) as Record<string, unknown>) : {};
+        const updated = {
+          ...existing,
+          description: typeof payload.description === 'string' ? payload.description : existing.description,
+          email: typeof payload.email === 'string' ? payload.email : existing.email,
+          name: typeof payload.name === 'string' ? payload.name : existing.name,
+        };
+        users.set(id, updated);
+        respondJson(res, 200, updated);
+        return;
+      }
+
+      if (req.method === 'DELETE' && /^\/users\/\d+$/.test(url.pathname)) {
+        if (!isAuthorized) {
+          respondJson(res, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const id = Number(url.pathname.split('/').pop());
+        if (!users.has(id)) {
+          respondJson(res, 404, { error: 'Not found' });
+          return;
+        }
+        users.delete(id);
+        respondJson(res, 204, null);
+        return;
+      }
     }
 
     if (req.method === 'PUT' && req.url === '/api/widgets/123') {

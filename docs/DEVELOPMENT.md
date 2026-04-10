@@ -84,6 +84,8 @@ Current architecture layers:
   workspace.yml and workspace environment management
 - `native.ts`
   collection/folder/request/environment management through Bruno-native files
+- `feature-slice.ts`
+  opinionated feature-slice planning, scaffolding, strict matrices, findings, and cleanup truth
 - MCP resources/prompts/completions
   exposed directly from `server.ts` on top of the same native managers
 - legacy generator modules

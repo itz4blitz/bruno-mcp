@@ -10,8 +10,29 @@ This is the current logical tool grouping for `bruno-mcp`.
 - `add_test_script`
 - `create_test_suite`
 - `create_crud_requests`
+- `inspect_feature_slice_context`
+- `plan_feature_slice`
+- `scaffold_feature_slice`
+- `scaffold_matrix_request`
+- `scaffold_support_requests`
+- `audit_feature_slice`
+- `record_slice_findings`
+- `refresh_generated_data`
 - `list_collections`
 - `get_collection_stats`
+
+## Feature Slices
+
+These tools sit above raw request CRUD and actively handhold feature-slice buildout.
+
+- inspect workspace and collection state
+- identify missing Bruno-native coverage
+- propose slice structure and support requests
+- scaffold happy path, read, negative, security, and support flows
+- enforce strict matrix authoring with request-owned base payloads plus scenario deltas only
+- emit separate matrix metadata so required fields and allowed delta paths stay explicit
+- generate truthful findings and cleanup documentation
+- treat project overlays as overlay logic instead of generic Bruno mechanics
 
 ## Workspace
 
@@ -80,6 +101,7 @@ Current resources include:
 - `bruno://collection/{collectionPath}`
 - `bruno://request/{requestPath}`
 - `bruno://environment/{collectionPath}/{environmentName}`
+- `bruno://slice/{collectionPath}/{sliceId}`
 
 These resources are intended for discovery, inspection, and model context, not mutation.
 
@@ -90,6 +112,7 @@ The server also exposes MCP prompts for reusable Bruno workflows.
 Current prompts include:
 
 - `generate_rest_feature`
+- `build_feature_slice`
 - `audit_bruno_collection`
 - `normalize_bruno_collection`
 
