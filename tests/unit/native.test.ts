@@ -55,8 +55,15 @@ test('BrunoNativeManager manages collection defaults, folder defaults, requests,
   assert.equal(request.relativePath, 'users/admin/get-user.bru');
 
   const updateRequestResult = await nativeManager.updateRequest(requestPath, {
+    assertions: [
+      { name: 'res.status', value: 'eq 200' },
+      { enabled: false, name: 'res.body.id', value: 'isNumber' },
+    ],
+    docs: 'Fetches a single user by runtime identifier.',
     headers: { Accept: 'application/json' },
     name: 'Fetch User',
+    settings: { encodeUrl: true, timeout: 10000 },
+    tags: ['users', 'happy-path'],
     tests: "test('status is 200', function () { expect(res.status).to.equal(200); });",
     url: '{{baseUrl}}/users/{{userId}}',
   });
@@ -64,9 +71,13 @@ test('BrunoNativeManager manages collection defaults, folder defaults, requests,
 
   const updatedRequestPath = updateRequestResult.path as string;
   const updatedRequest = await nativeManager.getRequest(updatedRequestPath);
+  assert.deepEqual(updatedRequest.tags, ['users', 'happy-path']);
+  assert.equal((updatedRequest.settings as Record<string, unknown>).encodeUrl, true);
+  assert.equal((updatedRequest.assertions as Array<{ name: string }>)[0].name, 'res.status');
   assert.equal(updatedRequest.name, 'Fetch User');
   assert.equal(updatedRequest.url, '{{baseUrl}}/users/{{userId}}');
   assert.match(JSON.stringify(updatedRequest), /status is 200/);
+  assert.match(JSON.stringify(updatedRequest), /Fetches a single user/);
 
   const moveResult = await nativeManager.moveRequest(
     updatedRequestPath,

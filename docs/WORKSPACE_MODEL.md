@@ -72,6 +72,8 @@ Workspace support in this fork currently includes:
 - reading and validating `workspace.yml`
 - adding/removing collection references
 - listing and managing workspace-level environments
+- exposing workspace and collection state as MCP resources
+- exposing reusable generation/audit workflows as MCP prompts
 
 The workspace root remains intentionally small and explicit.
 
@@ -81,3 +83,4 @@ The workspace root remains intentionally small and explicit.
 - no gRPC generation
 - no WebSocket generation
 - mixed-format workspaces may still require deliberate refactoring for best UX
+- desktop-active environment selection persistence is not yet a documented/verified feature of this server

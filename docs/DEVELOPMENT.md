@@ -37,6 +37,7 @@ Validates:
 - MCP server startup over stdio
 - end-to-end MCP tool invocation
 - workspace and native CRUD tools
+- resources, prompts, and prompt completion
 
 ### Acceptance
 
@@ -55,6 +56,19 @@ Validates:
 - `yaml` for `workspace.yml` management
 - `zod` for tool input schemas
 
+## Companion Skills Package
+
+The repo now also contains a companion skills scaffold under:
+
+- `packages/skills`
+
+This is intended to hold:
+
+- generic Bruno generation/audit skills
+- truthful testing rules
+- coverage matrix guidance
+- project-specific presets such as Workspace raw/dto overlays
+
 ## Implementation Direction
 
 The codebase is moving away from custom low-fidelity writers toward official Bruno file APIs wherever possible.
@@ -67,6 +81,8 @@ Current architecture layers:
   workspace.yml and workspace environment management
 - `native.ts`
   collection/folder/request/environment management through Bruno-native files
+- MCP resources/prompts/completions
+  exposed directly from `server.ts` on top of the same native managers
 - legacy generator modules
   still used for request generation flows and BRU-specific helpers
 

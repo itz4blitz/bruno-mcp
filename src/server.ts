@@ -3,8 +3,11 @@
  * Main MCP server implementation for Bruno API testing file generation
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { completable } from '@modelcontextprotocol/sdk/server/completable.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { promises as fs } from 'node:fs';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { z } from 'zod';
 
 import { createCollectionManager } from './bruno/collection.js';
@@ -67,6 +70,14 @@ const requestAuthSchema = z.object({
   config: z.record(z.string()),
 });
 
+const requestAssertionSchema = z.object({
+  name: z.string().min(1, 'Assertion target is required'),
+  value: z.string().min(1, 'Assertion expression is required'),
+  enabled: z.boolean().optional(),
+});
+
+const requestSettingsSchema = z.record(z.union([z.string(), z.number(), z.boolean(), z.null()]));
+
 const createCollectionToolSchema: ToolSchema = {
   name: z.string().min(1, 'Collection name is required'),
   description: z.string().optional(),
@@ -92,6 +103,15 @@ const createRequestToolSchema: ToolSchema = {
   query: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
   folder: z.string().optional(),
   sequence: z.number().int().positive().optional(),
+  docs: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  settings: requestSettingsSchema.optional(),
+  assertions: z.array(requestAssertionSchema).optional(),
+  preRequestVars: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  postResponseVars: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  preRequestScript: z.string().optional(),
+  postResponseScript: z.string().optional(),
+  tests: z.string().optional(),
 };
 
 const addTestScriptToolSchema: ToolSchema = {
@@ -212,6 +232,9 @@ const updateRequestToolSchema: ToolSchema = {
   postResponseScript: z.string().optional(),
   tests: z.string().optional(),
   docs: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  settings: requestSettingsSchema.optional(),
+  assertions: z.array(requestAssertionSchema).optional(),
 };
 
 const moveRequestToolSchema: ToolSchema = {
@@ -279,6 +302,8 @@ export class BrunoMcpServer {
     this.setupFolderTools();
     this.setupRequestCrudTools();
     this.setupEnvironmentCrudTools();
+    this.setupResources();
+    this.setupPrompts();
   }
 
   /**
@@ -376,9 +401,46 @@ export class BrunoMcpServer {
             query?: Record<string, string | number | boolean>;
             folder?: string;
             sequence?: number;
+            docs?: string;
+            tags?: string[];
+            settings?: Record<string, boolean | number | string | null>;
+            assertions?: Array<{ enabled?: boolean; name: string; value: string }>;
+            preRequestVars?: Record<string, string | number | boolean>;
+            postResponseVars?: Record<string, string | number | boolean>;
+            preRequestScript?: string;
+            postResponseScript?: string;
+            tests?: string;
           };
 
-          const result = await this.requestBuilder.createRequest(this.toCreateRequestInput(args));
+          const result = await this.requestBuilder.createRequest(
+            this.toCreateRequestInput({
+              auth: args.auth,
+              body: args.body,
+              collectionPath: args.collectionPath,
+              folder: args.folder,
+              headers: args.headers,
+              method: args.method,
+              name: args.name,
+              query: args.query,
+              sequence: args.sequence,
+              url: args.url,
+            }),
+          );
+
+          if (result.success && result.path) {
+            const metadataPatch = this.toRequestPatch(args);
+            if (this.hasRequestMetadataPatch(metadataPatch)) {
+              const patchResult = await this.nativeManager.updateRequest(
+                result.path,
+                metadataPatch,
+              );
+              if (!patchResult.success) {
+                return this.errorResult(
+                  `Request created at ${result.path} but metadata update failed: ${patchResult.error}`,
+                );
+              }
+            }
+          }
 
           return result.success
             ? this.textResult(`Created request "${args.name}" at ${result.path}`)
@@ -1166,6 +1228,264 @@ export class BrunoMcpServer {
     );
   }
 
+  private setupResources(): void {
+    this.server.registerResource(
+      'bruno_capabilities',
+      'bruno://capabilities',
+      {
+        description: 'High-level capabilities exposed by the Bruno MCP server.',
+        mimeType: 'application/json',
+        title: 'Bruno MCP Capabilities',
+      },
+      async (uri) =>
+        this.jsonResource(uri.toString(), {
+          features: {
+            generations: ['classic collections', 'REST', 'GraphQL over HTTP', 'binary uploads'],
+            metadata: [
+              'workspace',
+              'collection defaults',
+              'folder defaults',
+              'request CRUD',
+              'environments',
+            ],
+            protocols: ['tools', 'resources', 'prompts', 'prompt completions'],
+          },
+        }),
+    );
+
+    this.server.registerResource(
+      'bruno_workspace',
+      new ResourceTemplate('bruno://workspace/{+workspacePath}', {
+        complete: {
+          workspacePath: async (value) => this.completeWorkspacePaths(String(value || '')),
+        },
+        list: undefined,
+      }),
+      {
+        description: 'Read-only summary of a Bruno workspace.',
+        mimeType: 'application/json',
+        title: 'Bruno Workspace',
+      },
+      async (uri, variables) => {
+        const workspacePath = this.getTemplateVariable(variables, 'workspacePath');
+        const workspace = await this.workspaceManager.getWorkspaceSummary(workspacePath);
+        return this.jsonResource(uri.toString(), workspace);
+      },
+    );
+
+    this.server.registerResource(
+      'bruno_collection',
+      new ResourceTemplate('bruno://collection/{+collectionPath}', {
+        complete: {
+          collectionPath: async (value) => this.completeCollectionPaths(String(value || '')),
+        },
+        list: undefined,
+      }),
+      {
+        description: 'Read-only summary of a Bruno collection defaults and structure.',
+        mimeType: 'application/json',
+        title: 'Bruno Collection',
+      },
+      async (uri, variables) => {
+        const collectionPath = this.getTemplateVariable(variables, 'collectionPath');
+        const defaults = await this.nativeManager.getCollectionDefaults(collectionPath);
+        const folders = await this.nativeManager.listFolders(collectionPath);
+        const requests = await this.nativeManager.listRequests(collectionPath);
+        return this.jsonResource(uri.toString(), {
+          collectionPath,
+          defaults,
+          folders,
+          requests,
+        });
+      },
+    );
+
+    this.server.registerResource(
+      'bruno_request',
+      new ResourceTemplate('bruno://request/{+requestPath}', {
+        complete: {
+          requestPath: async (value) => this.completeRequestPaths(String(value || '')),
+        },
+        list: undefined,
+      }),
+      {
+        description: 'Read-only structured representation of a Bruno request file.',
+        mimeType: 'application/json',
+        title: 'Bruno Request',
+      },
+      async (uri, variables) => {
+        const requestPath = this.getTemplateVariable(variables, 'requestPath');
+        const request = await this.nativeManager.getRequest(requestPath);
+        return this.jsonResource(uri.toString(), request);
+      },
+    );
+
+    this.server.registerResource(
+      'bruno_environment',
+      new ResourceTemplate('bruno://environment/{+collectionPath}/{environmentName}', {
+        complete: {
+          collectionPath: async (value) => this.completeCollectionPaths(String(value || '')),
+          environmentName: async (_value, context) => {
+            const collectionPath = context?.arguments?.collectionPath;
+            return collectionPath ? this.completeEnvironmentNames(collectionPath, '') : [];
+          },
+        },
+        list: undefined,
+      }),
+      {
+        description: 'Read-only view of a collection-level Bruno environment.',
+        mimeType: 'application/json',
+        title: 'Bruno Environment',
+      },
+      async (uri, variables) => {
+        const collectionPath = this.getTemplateVariable(variables, 'collectionPath');
+        const environmentName = this.getTemplateVariable(variables, 'environmentName');
+        const environment = await this.nativeManager.getEnvironment(
+          collectionPath,
+          environmentName,
+        );
+        return this.jsonResource(uri.toString(), {
+          collectionPath,
+          environmentName,
+          variables: environment,
+        });
+      },
+    );
+  }
+
+  private setupPrompts(): void {
+    this.server.registerPrompt(
+      'generate_rest_feature',
+      {
+        title: 'Generate REST Feature',
+        description:
+          'Create a reusable prompt for generating a high-coverage Bruno REST feature slice.',
+        argsSchema: {
+          collectionPath: completable(z.string().min(1), async (value) =>
+            this.completeCollectionPaths(String(value || '')),
+          ),
+          featureName: z.string().min(1),
+          featureStyle: completable(z.string().min(1), async (value) =>
+            this.completeStaticValues(String(value || ''), [
+              'resource-crud',
+              'workflow',
+              'auth',
+              'search-filtering',
+              'upload',
+              'admin-resource',
+            ]),
+          ),
+          sourceOfTruth: z.string().optional(),
+        },
+      },
+      async (args) => ({
+        description: 'Prompt for generating a Bruno REST feature slice.',
+        messages: [
+          {
+            content: {
+              text: `Create or extend a Bruno feature slice in collection \`${args.collectionPath}\` for feature \`${args.featureName}\`.
+
+Style: \`${args.featureStyle}\`
+Primary source of truth: \`${args.sourceOfTruth || 'controllers + DTOs + runtime behavior'}\`
+
+Rules:
+- prefer collection/folder defaults over repeated per-request setup
+- create truthful assertions and tests; do not weaken expectations to match bugs
+- use data-driven templates for create-heavy scenario matrices
+- populate docs, tags, vars, settings, and assertions where they add real value
+- keep scenarios outside the collection tree when that improves Bruno UX`,
+              type: 'text',
+            },
+            role: 'user',
+          },
+        ],
+      }),
+    );
+
+    this.server.registerPrompt(
+      'audit_bruno_collection',
+      {
+        title: 'Audit Bruno Collection',
+        description:
+          'Create a prompt for auditing a Bruno collection for duplication, missing coverage, and broken Bruno-native patterns.',
+        argsSchema: {
+          collectionPath: completable(z.string().min(1), async (value) =>
+            this.completeCollectionPaths(String(value || '')),
+          ),
+          focus: completable(z.string().min(1), async (value) =>
+            this.completeStaticValues(String(value || ''), [
+              'coverage',
+              'duplication',
+              'assertions',
+              'workspace-structure',
+              'data-driven-design',
+            ]),
+          ),
+        },
+      },
+      async (args) => ({
+        description: 'Prompt for auditing a Bruno collection.',
+        messages: [
+          {
+            content: {
+              text: `Audit the Bruno collection at \`${args.collectionPath}\` with focus \`${args.focus}\`.
+
+Look for:
+- request-level duplication that should be lifted to collection/folder defaults
+- empty or missing assertions, tags, settings, docs, and vars tabs where they should be populated
+- scenario-matrix gaps
+- structure that is technically valid but poor Bruno UX
+- places where tests should fail to reveal product bugs instead of normalizing defects`,
+              type: 'text',
+            },
+            role: 'user',
+          },
+        ],
+      }),
+    );
+
+    this.server.registerPrompt(
+      'normalize_bruno_collection',
+      {
+        title: 'Normalize Bruno Collection',
+        description:
+          'Create a prompt for refactoring a Bruno collection toward workspace-native reuse and lower duplication.',
+        argsSchema: {
+          collectionPath: completable(z.string().min(1), async (value) =>
+            this.completeCollectionPaths(String(value || '')),
+          ),
+          objective: completable(z.string().min(1), async (value) =>
+            this.completeStaticValues(String(value || ''), [
+              'lift-folder-defaults',
+              'lift-collection-defaults',
+              'reduce-auth-duplication',
+              'normalize-scenarios',
+              'prepare-for-packaging',
+            ]),
+          ),
+        },
+      },
+      async (args) => ({
+        description: 'Prompt for normalizing a Bruno collection.',
+        messages: [
+          {
+            content: {
+              text: `Refactor the Bruno collection at \`${args.collectionPath}\` with objective \`${args.objective}\`.
+
+Prefer:
+- collection/folder defaults for shared headers, auth, scripts, vars, tests, and docs
+- request-specific logic only where it is truly request-specific
+- data-driven request templates over many nearly-identical requests
+- tags and docs that make bugs and intent visible in Bruno UI`,
+              type: 'text',
+            },
+            role: 'user',
+          },
+        ],
+      }),
+    );
+  }
+
   /**
    * Start the MCP server
    */
@@ -1309,6 +1629,139 @@ export class BrunoMcpServer {
       }, 'res.getBody()');
   }
 
+  private async completeWorkspacePaths(prefix: string): Promise<string[]> {
+    return this.completeFilesystemPaths(prefix, async (candidatePath) =>
+      this.pathExists(join(candidatePath, 'workspace.yml')),
+    );
+  }
+
+  private async completeCollectionPaths(prefix: string): Promise<string[]> {
+    return this.completeFilesystemPaths(prefix, async (candidatePath) => {
+      return (
+        (await this.pathExists(join(candidatePath, 'bruno.json'))) ||
+        (await this.pathExists(join(candidatePath, 'collection.bru'))) ||
+        (await this.pathExists(join(candidatePath, 'opencollection.yml')))
+      );
+    });
+  }
+
+  private async completeRequestPaths(prefix: string): Promise<string[]> {
+    return this.completeFilesystemPaths(prefix, async (candidatePath) => {
+      const extension = extname(candidatePath).toLowerCase();
+      if (!['.bru', '.yml'].includes(extension)) {
+        return false;
+      }
+
+      const fileName = basename(candidatePath);
+      return ![
+        'collection.bru',
+        'folder.bru',
+        'opencollection.yml',
+        'folder.yml',
+        'workspace.yml',
+      ].includes(fileName);
+    });
+  }
+
+  private async completeEnvironmentNames(
+    collectionPath: string,
+    prefix: string,
+  ): Promise<string[]> {
+    try {
+      const environments = await this.nativeManager.listEnvironments(collectionPath);
+      return environments.filter((name) => name.toLowerCase().startsWith(prefix.toLowerCase()));
+    } catch {
+      return [];
+    }
+  }
+
+  private completeStaticValues(prefix: string, values: string[]): string[] {
+    return values.filter((value) => value.toLowerCase().startsWith(prefix.toLowerCase()));
+  }
+
+  private async completeFilesystemPaths(
+    prefix: string,
+    predicate: (candidatePath: string) => Promise<boolean>,
+  ): Promise<string[]> {
+    const normalizedPrefix = prefix.trim();
+    const resolvedPrefix =
+      normalizedPrefix.length === 0 ? process.cwd() : resolve(normalizedPrefix);
+    const parentPath = await this.resolveCompletionParentPath(resolvedPrefix);
+    const partialName = this.getCompletionPartialName(normalizedPrefix, resolvedPrefix, parentPath);
+
+    try {
+      const entries = await fs.readdir(parentPath, { withFileTypes: true });
+      const matches: string[] = [];
+
+      for (const entry of entries) {
+        if (!entry.name.toLowerCase().startsWith(partialName.toLowerCase())) {
+          continue;
+        }
+
+        const candidatePath = join(parentPath, entry.name);
+        if (!(await predicate(candidatePath))) {
+          continue;
+        }
+
+        matches.push(candidatePath);
+      }
+
+      return matches.toSorted().slice(0, 50);
+    } catch {
+      return [];
+    }
+  }
+
+  private async resolveCompletionParentPath(resolvedPrefix: string): Promise<string> {
+    try {
+      const stats = await fs.stat(resolvedPrefix);
+      return stats.isDirectory() ? resolvedPrefix : dirname(resolvedPrefix);
+    } catch {
+      return dirname(resolvedPrefix);
+    }
+  }
+
+  private getCompletionPartialName(
+    originalPrefix: string,
+    resolvedPrefix: string,
+    parentPath: string,
+  ): string {
+    if (originalPrefix.trim().length === 0) {
+      return '';
+    }
+
+    return parentPath === resolvedPrefix ? '' : basename(resolvedPrefix);
+  }
+
+  private getTemplateVariable(variables: Record<string, unknown>, key: string): string {
+    const value = variables[key];
+    if (Array.isArray(value)) {
+      return decodeURIComponent(String(value[0] || ''));
+    }
+    return decodeURIComponent(String(value || ''));
+  }
+
+  private jsonResource(uri: string, value: unknown) {
+    return {
+      contents: [
+        {
+          mimeType: 'application/json',
+          text: JSON.stringify(value, null, 2),
+          uri,
+        },
+      ],
+    };
+  }
+
+  private async pathExists(path: string): Promise<boolean> {
+    try {
+      await fs.access(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private toDefaultsPatch(args: Record<string, unknown>) {
     return {
       auth: args.auth as { config?: Record<string, string>; type: AuthType } | undefined,
@@ -1330,6 +1783,9 @@ export class BrunoMcpServer {
   private toRequestPatch(args: Record<string, unknown>) {
     return {
       ...this.toDefaultsPatch(args),
+      assertions: args.assertions as
+        | Array<{ enabled?: boolean; name: string; value: string }>
+        | undefined,
       auth: args.auth as { config?: Record<string, string>; type: AuthType } | undefined,
       body: args.body as
         | {
@@ -1346,9 +1802,37 @@ export class BrunoMcpServer {
       name: args.name as string | undefined,
       query: args.query as Record<string, string | number | boolean> | undefined,
       sequence: args.sequence as number | undefined,
+      settings: args.settings as Record<string, boolean | number | string | null> | undefined,
+      tags: args.tags as string[] | undefined,
       unsetQuery: args.unsetQuery as string[] | undefined,
       url: args.url as string | undefined,
     };
+  }
+
+  private hasRequestMetadataPatch(patch: ReturnType<BrunoMcpServer['toRequestPatch']>): boolean {
+    return Boolean(
+      patch.assertions !== undefined ||
+      patch.auth !== undefined ||
+      patch.body !== undefined ||
+      patch.docs !== undefined ||
+      patch.headers !== undefined ||
+      patch.method !== undefined ||
+      patch.name !== undefined ||
+      patch.postResponseScript !== undefined ||
+      patch.postResponseVars !== undefined ||
+      patch.preRequestScript !== undefined ||
+      patch.preRequestVars !== undefined ||
+      patch.query !== undefined ||
+      patch.sequence !== undefined ||
+      patch.settings !== undefined ||
+      patch.tags !== undefined ||
+      patch.tests !== undefined ||
+      patch.unsetHeaders !== undefined ||
+      patch.unsetPostResponseVars !== undefined ||
+      patch.unsetPreRequestVars !== undefined ||
+      patch.unsetQuery !== undefined ||
+      patch.url !== undefined,
+    );
   }
 
   private jsonResult(value: unknown) {

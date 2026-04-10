@@ -12,6 +12,7 @@ It now supports two practical jobs:
 
 1. Generate runnable Bruno collections and requests.
 2. Manage existing Bruno workspaces and collections in place.
+3. Expose Bruno-native state and workflows through MCP resources and prompts.
 
 That includes:
 
@@ -30,7 +31,10 @@ That includes:
 - collection-level default headers, vars, scripts, and tests
 - folder-level default headers, vars, scripts, and tests
 - request CRUD and movement
+- request metadata parity for assertions, tags, settings, vars, docs, and scripts
 - collection environment CRUD
+- read-only Bruno resources through MCP
+- reusable Bruno prompts with argument completion
 
 ## What It Does Not Do
 
@@ -124,6 +128,12 @@ The server preserves the format already present on disk instead of silently conv
 - `update_environment_vars`
 - `delete_environment`
 
+### MCP-native discovery
+
+- resources for workspace, collection, request, environment, and server capabilities
+- prompt templates for generating, auditing, and normalizing Bruno collections
+- prompt argument completion for common filesystem and feature inputs
+
 ## Install
 
 ```bash
@@ -190,6 +200,7 @@ npm run verify
 - `docs/MCP_TOOL_REFERENCE.md`
 - `docs/DEVELOPMENT.md`
 - `docs/CLIENT_SETUP.md`
+- `packages/skills/README.md`
 
 ## Notes
 

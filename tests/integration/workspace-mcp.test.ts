@@ -83,13 +83,48 @@ docs: ''
   });
   assert.match(requestText, /Created request/);
 
+  const advancedRequestText = await callToolText(session.client, 'create_request', {
+    collectionPath,
+    name: 'List Users',
+    method: 'GET',
+    url: '{{baseUrl}}/users',
+    folder: 'users',
+    tags: ['users', 'list'],
+    settings: {
+      encodeUrl: true,
+    },
+    assertions: [{ name: 'res.status', value: 'eq 200' }],
+    docs: 'Lists users.',
+  });
+  assert.match(advancedRequestText, /Created request/);
+
+  const advancedRequest = JSON.parse(
+    await callToolText(session.client, 'get_request', {
+      requestPath: join(collectionPath, 'users', 'list-users.bru'),
+    }),
+  ) as { assertions: unknown[]; docs: string; settings: Record<string, unknown>; tags: string[] };
+  assert.deepEqual(advancedRequest.tags, ['users', 'list']);
+  assert.equal(advancedRequest.assertions.length, 1);
+  assert.equal(advancedRequest.docs, 'Lists users.');
+  assert.equal(advancedRequest.settings.encodeUrl, true);
+
   const requestPath = join(collectionPath, 'users', 'admin', 'get-user.bru');
   const updateRequestText = await callToolText(session.client, 'update_request', {
+    assertions: [
+      { name: 'res.status', value: 'eq 200' },
+      { name: 'res.body.id', value: 'isNumber', enabled: false },
+    ],
+    docs: 'Fetch a single user.',
     requestPath,
     headers: {
       Accept: 'application/json',
     },
     name: 'Fetch User',
+    settings: {
+      encodeUrl: true,
+      timeout: 10000,
+    },
+    tags: ['users', 'read'],
   });
   assert.match(updateRequestText, /Updated request/);
 
@@ -102,8 +137,11 @@ docs: ''
 
   const listRequests = JSON.parse(
     await callToolText(session.client, 'list_requests', { collectionPath }),
-  ) as { requests: Array<{ name: string }> };
-  assert.ok(listRequests.requests.some((request) => request.name === 'Fetch User Root'));
+  ) as { requests: Array<{ assertions: unknown[]; name: string; tags: string[] }> };
+  const movedRequest = listRequests.requests.find((request) => request.name === 'Fetch User Root');
+  assert.ok(movedRequest);
+  assert.deepEqual(movedRequest.tags, ['users', 'read']);
+  assert.equal(movedRequest.assertions.length, 2);
 
   const createWorkspaceEnvironmentText = await callToolText(
     session.client,
@@ -134,4 +172,40 @@ docs: ''
 
   const workspaceFileContent = await readFile(join(workspacePath, 'workspace.yml'), 'utf8');
   assert.match(workspaceFileContent, /native-api/);
+
+  const promptList = await session.client.listPrompts();
+  assert.ok(promptList.prompts.some((prompt) => prompt.name === 'generate_rest_feature'));
+
+  const completion = await session.client.complete({
+    argument: {
+      name: 'featureStyle',
+      value: 'res',
+    },
+    ref: {
+      name: 'generate_rest_feature',
+      type: 'ref/prompt',
+    },
+  });
+  assert.ok(completion.completion.values.includes('resource-crud'));
+
+  const prompt = await session.client.getPrompt({
+    arguments: {
+      collectionPath,
+      featureName: 'Users',
+      featureStyle: 'resource-crud',
+    },
+    name: 'generate_rest_feature',
+  });
+  assert.match(JSON.stringify(prompt), /resource-crud/);
+
+  const resources = await session.client.listResources();
+  assert.ok(resources.resources.some((resource) => resource.uri === 'bruno://capabilities'));
+
+  const capabilitiesResource = await session.client.readResource({ uri: 'bruno://capabilities' });
+  assert.match(JSON.stringify(capabilitiesResource), /prompt completions/);
+
+  const workspaceResource = await session.client.readResource({
+    uri: `bruno://workspace/${encodeURIComponent(workspacePath)}`,
+  });
+  assert.match(JSON.stringify(workspaceResource), /native-api/);
 });

@@ -69,8 +69,36 @@ These operate on the existing file format already on disk.
 - `update_environment_vars`
 - `delete_environment`
 
+## Resources
+
+The server also exposes read-only MCP resources for Bruno-native state.
+
+Current resources include:
+
+- `bruno://capabilities`
+- `bruno://workspace/{workspacePath}`
+- `bruno://collection/{collectionPath}`
+- `bruno://request/{requestPath}`
+- `bruno://environment/{collectionPath}/{environmentName}`
+
+These resources are intended for discovery, inspection, and model context, not mutation.
+
+## Prompts
+
+The server also exposes MCP prompts for reusable Bruno workflows.
+
+Current prompts include:
+
+- `generate_rest_feature`
+- `audit_bruno_collection`
+- `normalize_bruno_collection`
+
+These prompts support argument completion for common inputs like collection paths and workflow styles.
+
 ## Design Notes
 
 - Requests and environments are treated as file-native Bruno assets.
 - Workspace metadata is treated separately from collection internals.
 - The server favors patching and preserving structure over rewriting entire projects conceptually.
+- Mutation remains tool-driven.
+- Read-only discovery is moving toward resources and prompts.

@@ -1,0 +1,19 @@
+{
+  "name": "@bruno-mcp/skills",
+  "version": "0.1.0",
+  "description": "Companion skill pack and presets for bruno-mcp",
+  "keywords": [
+    "api",
+    "bruno",
+    "mcp",
+    "skills",
+    "testing"
+  ],
+  "license": "MIT",
+  "files": [
+    "README.md",
+    "skills",
+    "presets"
+  ],
+  "type": "module"
+}

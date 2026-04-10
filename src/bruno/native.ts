@@ -38,6 +38,7 @@ export interface RequestDefaultsPatch {
 }
 
 export interface RequestUpdatePatch extends RequestDefaultsPatch {
+  assertions?: Array<{ enabled?: boolean; name: string; value: string }>;
   body?: {
     content?: string;
     contentType?: string;
@@ -51,6 +52,8 @@ export interface RequestUpdatePatch extends RequestDefaultsPatch {
   name?: string;
   query?: Record<string, string | number | boolean>;
   sequence?: number;
+  settings?: Record<string, boolean | number | string | null>;
+  tags?: string[];
   unsetQuery?: string[];
   url?: string;
 }
@@ -538,6 +541,25 @@ export class BrunoNativeManager {
       request.docs = patch.docs || '';
     }
 
+    if (patch.tags !== undefined) {
+      nextDocument.tags = patch.tags;
+    }
+
+    if (patch.settings) {
+      nextDocument.settings = {
+        ...(nextDocument.settings as Record<string, unknown> | undefined),
+        ...patch.settings,
+      };
+    }
+
+    if (patch.assertions !== undefined) {
+      request.assertions = patch.assertions.map((assertion) => ({
+        enabled: assertion.enabled !== false,
+        name: assertion.name,
+        value: assertion.value,
+      }));
+    }
+
     return nextDocument;
   }
 
@@ -732,6 +754,7 @@ export class BrunoNativeManager {
     const params = Array.isArray(request.params) ? request.params : [];
 
     return {
+      assertions: Array.isArray(request.assertions) ? request.assertions : [],
       auth: request.auth || { mode: 'none' },
       body: request.body || { mode: 'none' },
       docs: request.docs || '',
@@ -746,6 +769,8 @@ export class BrunoNativeManager {
       relativePath: toRelativeCollectionPath(collectionPath, requestPath),
       scripts: request.script || {},
       seq: document.seq || 1,
+      settings: (document.settings as Record<string, unknown> | undefined) || {},
+      tags: this.normalizeTags(document.tags),
       tests: request.tests || '',
       type: document.type || 'http-request',
       url: request.url || '',
@@ -780,6 +805,34 @@ export class BrunoNativeManager {
       name,
       value: String(value),
     }));
+  }
+
+  private normalizeTags(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.map(String);
+    }
+
+    if (typeof value !== 'string') {
+      return [];
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return [];
+    }
+
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      return trimmed
+        .slice(1, -1)
+        .split(',')
+        .map((part) => part.trim().replace(/^['"]|['"]$/g, ''))
+        .filter((part) => part.length > 0);
+    }
+
+    return trimmed
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
   }
 
   private sanitizeRequestFileName(name: string): string {
