@@ -67,7 +67,7 @@ This is intended to hold:
 - generic Bruno generation/audit skills
 - truthful testing rules
 - coverage matrix guidance
-- project-specific presets such as Workspace raw/dto overlays
+- no project-specific presets in the generic package
 
 ## Implementation Direction
 

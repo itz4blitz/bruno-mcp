@@ -15,7 +15,7 @@ test('MCP server exposes workspace and native collection management tools', asyn
     join(workspacePath, 'workspace.yml'),
     `opencollection: 1.0.0
 info:
-  name: "Workspace"
+  name: "Sample Workspace"
   type: workspace
 
 collections: []

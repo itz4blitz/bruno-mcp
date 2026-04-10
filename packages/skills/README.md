@@ -29,10 +29,10 @@ This package is intended to carry reusable generation and auditing guidance that
 
 ## Presets
 
-- `raw-dto-overlay.md`
+- project-specific overlays belong in the target workspace or repo, not in this generic package
 
 ## Philosophy
 
-The server should ship Bruno mechanics.
+The server and generic skills package should ship Bruno mechanics.
 
-Presets should ship project semantics.
+Project semantics should live in project-local overlays.

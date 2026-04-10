@@ -16,7 +16,7 @@ test('WorkspaceManager adds, validates, and removes workspace collections', asyn
     join(workspacePath, 'workspace.yml'),
     `opencollection: 1.0.0
 info:
-  name: "Workspace"
+  name: "Sample Workspace"
   type: workspace
 
 collections: []
@@ -41,7 +41,7 @@ docs: ''
   assert.equal(addResult.success, true);
 
   const summary = await workspaceManager.getWorkspaceSummary(workspacePath);
-  assert.equal(summary.workspaceName, 'Workspace');
+  assert.equal(summary.workspaceName, 'Sample Workspace');
   assert.deepEqual(summary.collections, [
     { exists: true, name: 'Branch', path: 'collections/Branch' },
   ]);
@@ -62,7 +62,7 @@ test('WorkspaceManager manages workspace-level environments', async () => {
     join(workspacePath, 'workspace.yml'),
     `opencollection: 1.0.0
 info:
-  name: "Workspace"
+  name: "Sample Workspace"
   type: workspace
 
 collections: []
