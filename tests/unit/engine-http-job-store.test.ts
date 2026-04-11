@@ -26,6 +26,7 @@ test('JsonFileEngineRunJobStore persists queued to succeeded transitions', async
       runReportPath: '/tmp/run-report.json',
       runSummaryMarkdownPath: '/tmp/run-summary.md',
       supportGraphPath: '/tmp/support-graph.json',
+      validationSummaryMarkdownPath: '/tmp/validation-summary.md',
     },
     request: {
       collectionPath: '/tmp/collection',
@@ -81,6 +82,7 @@ test('JsonFileEngineRunJobStore finds only active jobs', async () => {
       runReportPath: '/tmp/run-report.json',
       runSummaryMarkdownPath: '/tmp/run-summary.md',
       supportGraphPath: '/tmp/support-graph.json',
+      validationSummaryMarkdownPath: '/tmp/validation-summary.md',
     },
     request: { collectionPath: '/tmp/collection', env: 'test', sliceId: 'users' },
   });

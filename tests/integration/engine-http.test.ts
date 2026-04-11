@@ -266,11 +266,22 @@ test('Engine HTTP run endpoint returns structured artifacts and run report', asy
   });
   assert.equal(validateManifestResponse.status, 200);
   const validateManifest = (await validateManifestResponse.json()) as {
-    data: { artifacts: { artifactsManifestPath: string; supportGraphPath: string }; validation: { valid: boolean } };
+    data: {
+      artifacts: {
+        artifactsManifestPath: string;
+        supportGraphPath: string;
+        validationSummaryMarkdownPath: string;
+      };
+      validation: { valid: boolean };
+    };
   };
   assert.equal(validateManifest.data.validation.valid, true);
   assert.equal(typeof validateManifest.data.artifacts.supportGraphPath, 'string');
   assert.equal(typeof validateManifest.data.artifacts.artifactsManifestPath, 'string');
+  assert.equal(typeof validateManifest.data.artifacts.validationSummaryMarkdownPath, 'string');
+
+  const validationSummary = await readFile(validateManifest.data.artifacts.validationSummaryMarkdownPath, 'utf8');
+  assert.match(validationSummary, /# Validation Summary/);
 
   const asyncRunResponse = await fetch(`${baseUrl}/engine/run`, {
     body: JSON.stringify({

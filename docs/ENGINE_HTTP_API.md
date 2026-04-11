@@ -55,6 +55,13 @@ Preferred import path for Premier:
 import { createBrunoEngineClient, getEngineHttpJsonSchemas } from 'bruno-mcp/engine';
 ```
 
+Narrower subpaths are also exported:
+
+- `bruno-mcp/engine/client`
+- `bruno-mcp/engine/schema`
+- `bruno-mcp/engine/job-store`
+- `bruno-mcp/engine/server`
+
 ## Endpoints
 
 - `GET /engine/health`

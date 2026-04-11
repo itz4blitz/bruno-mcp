@@ -116,3 +116,10 @@ test('BrunoEngineClient sends schema-version header and throws version mismatch 
   await assert.rejects(mismatchClient.health(), BrunoEngineVersionMismatchError);
   assert.equal(seenHeaders[0], '2');
 });
+
+test('engine barrel re-exports server and client surfaces', async () => {
+  const engineModule = await import('../../src/engine-http/index.js');
+  assert.equal(typeof engineModule.createEngineHttpServer, 'function');
+  assert.equal(typeof engineModule.createBrunoEngineClient, 'function');
+  assert.equal(typeof engineModule.getEngineHttpJsonSchemas, 'function');
+});

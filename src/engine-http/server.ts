@@ -227,8 +227,9 @@ export class EngineHttpServer {
         }
         case '/engine/validate-run-manifest': {
           const body = validateBody(await readJsonBody<EngineInspectSliceRequest>(request), engineInspectSliceRequestSchema);
-          const validation = await this.featureSliceManager.validateRunManifest(body.collectionPath, body.sliceId);
-          const artifacts = await this.featureSliceManager.getArtifactBundle(body.collectionPath, body.sliceId);
+          const fullValidation = await this.featureSliceManager.validateFeatureSlice(body.collectionPath, body.sliceId);
+          const validation = fullValidation.manifestValidation;
+          const artifacts = fullValidation.artifacts;
           writeJson(response, 200, this.validateSuccessEnvelopeForRoute('validateRunManifest', { artifacts, validation }));
           return;
         }

@@ -29,11 +29,34 @@
     "LICENSE"
   ],
   "exports": {
-    ".": "./dist/index.js",
-    "./engine": "./dist/engine-http/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./engine": {
+      "types": "./dist/engine-http/index.d.ts",
+      "import": "./dist/engine-http/index.js"
+    },
+    "./engine/client": {
+      "types": "./dist/engine-http/client.d.ts",
+      "import": "./dist/engine-http/client.js"
+    },
+    "./engine/schema": {
+      "types": "./dist/engine-http/schema.d.ts",
+      "import": "./dist/engine-http/schema.js"
+    },
+    "./engine/job-store": {
+      "types": "./dist/engine-http/job-store.d.ts",
+      "import": "./dist/engine-http/job-store.js"
+    },
+    "./engine/server": {
+      "types": "./dist/engine-http/server.d.ts",
+      "import": "./dist/engine-http/server.js"
+    }
   },
   "type": "module",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist coverage",

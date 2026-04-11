@@ -99,6 +99,7 @@ const artifactBundleSchema = z
     runReportPath: z.string().min(1),
     runSummaryMarkdownPath: z.string().min(1),
     supportGraphPath: z.string().min(1),
+    validationSummaryMarkdownPath: z.string().min(1),
   })
   .strict();
 
