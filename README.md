@@ -61,7 +61,7 @@ This fork is built around that philosophy.
 - OpenAPI/controller contract inspection for controller-aware slice planning
 - strict matrix scaffolding with request-owned base payloads and scenario-delta files
 - explicit support request scaffolding with visible auth/seed/resolve/lookup/cleanup helpers
-- project overlay support for product-specific semantics such as raw/DTO behavior
+- project overlay support for product-specific raw/DTO overlay behavior
 - resources for read-only Bruno state inspection
 - prompts for common workflows
 - argument completion for paths and styles

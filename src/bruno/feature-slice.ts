@@ -373,6 +373,7 @@ export interface FeatureSliceArtifactBundle {
   runReportPath: string;
   runSummaryMarkdownPath: string;
   supportGraphPath: string;
+  validationSummaryMarkdownPath: string;
 }
 
 export interface FeatureSliceArtifactsRunRecord {
@@ -387,6 +388,13 @@ export interface FeatureSliceArtifactsRunRecord {
 
 export interface FeatureSliceArtifactsManifest extends FeatureSliceArtifactBundle {
   collectionPath: string;
+  lastValidation?: {
+    errorCount: number;
+    generatedAt: string;
+    valid: boolean;
+    validationSummaryMarkdownPath: string;
+    warningCount: number;
+  };
   lastRun?: FeatureSliceArtifactsRunRecord;
   sliceId: string;
   updatedAt: string;
@@ -1264,6 +1272,59 @@ export class FeatureSliceManager {
       .join('\n');
   }
 
+  private formatValidationSummaryMarkdown(
+    sliceId: string,
+    validation: FeatureRunManifestValidation,
+    audit: Record<string, unknown>,
+  ): string {
+    const collectionDefects = ((audit as { collectionDefects?: unknown[] }).collectionDefects || []).length;
+    const coverageGaps = ((audit as { coverageGaps?: unknown[] }).coverageGaps || []).length;
+    const productDefects = ((audit as { productDefects?: unknown[] }).productDefects || []).length;
+    return [
+      '# Validation Summary',
+      '',
+      `- Slice: ${sliceId}`,
+      `- Valid: ${validation.valid}`,
+      `- Error Count: ${validation.errors.length}`,
+      `- Warning Count: ${validation.warnings.length}`,
+      `- Collection Defects: ${collectionDefects}`,
+      `- Coverage Gaps: ${coverageGaps}`,
+      `- Product Defects: ${productDefects}`,
+      '',
+      '## Errors',
+      '',
+      ...(validation.errors.length > 0 ? validation.errors.map((error) => `- ${error}`) : ['- none']),
+      '',
+      '## Warnings',
+      '',
+      ...(validation.warnings.length > 0 ? validation.warnings.map((warning) => `- ${warning}`) : ['- none']),
+    ].join('\n');
+  }
+
+  private async writeValidationSummaryMarkdownFile(
+    collectionPath: string,
+    sliceId: string,
+    validation: FeatureRunManifestValidation,
+    audit: Record<string, unknown>,
+  ): Promise<string> {
+    const bundle = await this.getArtifactBundle(collectionPath, sliceId);
+    await fs.mkdir(dirname(bundle.validationSummaryMarkdownPath), { recursive: true });
+    await fs.writeFile(
+      bundle.validationSummaryMarkdownPath,
+      `${this.formatValidationSummaryMarkdown(sliceId, validation, audit)}\n`,
+    );
+    await this.writeArtifactsManifest(collectionPath, sliceId, {
+      lastValidation: {
+        errorCount: validation.errors.length,
+        generatedAt: new Date().toISOString(),
+        valid: validation.valid,
+        validationSummaryMarkdownPath: bundle.validationSummaryMarkdownPath,
+        warningCount: validation.warnings.length,
+      },
+    });
+    return bundle.validationSummaryMarkdownPath;
+  }
+
   private async writeRunSummaryMarkdownFile(
     collectionPath: string,
     sliceId: string,
@@ -1362,13 +1423,17 @@ export class FeatureSliceManager {
       runReportPath: join(metadataRoot, 'run-report.json'),
       runSummaryMarkdownPath: join(metadataRoot, 'run-summary.md'),
       supportGraphPath: join(metadataRoot, 'support-graph.json'),
+      validationSummaryMarkdownPath: join(metadataRoot, 'validation-summary.md'),
     };
   }
 
   private async writeArtifactsManifest(
     collectionPath: string,
     sliceId: string,
-    update: Partial<FeatureSliceArtifactsManifest> & { lastRun?: FeatureSliceArtifactsRunRecord },
+    update: Partial<FeatureSliceArtifactsManifest> & {
+      lastRun?: FeatureSliceArtifactsRunRecord;
+      lastValidation?: FeatureSliceArtifactsManifest['lastValidation'];
+    },
   ): Promise<string> {
     const bundle = await this.getArtifactBundle(collectionPath, sliceId);
     const manifestPath = bundle.artifactsManifestPath;
@@ -1381,6 +1446,7 @@ export class FeatureSliceManager {
     const next: FeatureSliceArtifactsManifest = {
       ...bundle,
       collectionPath,
+      lastValidation: update.lastValidation ?? existing?.lastValidation,
       lastRun: update.lastRun ?? existing?.lastRun,
       sliceId,
       updatedAt: new Date().toISOString(),
@@ -1396,6 +1462,7 @@ export class FeatureSliceManager {
       this.validateRunManifest(collectionPath, sliceId),
       this.getArtifactBundle(collectionPath, sliceId),
     ]);
+    await this.writeValidationSummaryMarkdownFile(collectionPath, sliceId, manifestValidation, audit);
     return {
       artifacts,
       audit,
@@ -2591,12 +2658,12 @@ export class FeatureSliceManager {
           description:
             'Treat raw payload and DTO behavior as separate layers. Generic Bruno requests should document raw input expectations without pretending DTO overlays are generic behavior.',
           docsNotes: [
-            'raw/DTO handling is project overlay logic, not generic Bruno logic.',
+            'Raw/DTO handling is project overlay logic, not generic Bruno logic.',
             'Document raw payload expectations and DTO/output mapping separately.',
           ],
           id: overlay,
           requiredInputs: [`${targetResource}RawPayloadMode`],
-          requestTags: ['overlay-raw-dto-overlay'],
+          requestTags: ['overlay-raw-dto'],
         };
       default:
         return {

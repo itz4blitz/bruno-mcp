@@ -158,6 +158,18 @@ test('FeatureSliceManager plans controller-aware Branch slice from OpenAPI contr
   assert.ok(supportGraph.nodes.some((node) => node.kind === 'support'));
   assert.ok(supportGraph.edges.some((edge) => edge.kind === 'requires-role'));
 
+  const validationResult = await featureSliceManager.validateFeatureSlice(collectionPath, 'branch');
+  assert.equal(validationResult.valid, true);
+  const validationSummary = await readFile(validationResult.artifacts.validationSummaryMarkdownPath, 'utf8');
+  assert.match(validationSummary, /# Validation Summary/);
+  assert.match(validationSummary, /branch/i);
+
+  const artifactsManifest = JSON.parse(
+    await readFile(join(collectionPath, '.bruno-mcp', 'feature-slices', 'branch', 'artifacts.json'), 'utf8'),
+  ) as { lastValidation?: { valid: boolean; validationSummaryMarkdownPath?: string } };
+  assert.equal(artifactsManifest.lastValidation?.valid, true);
+  assert.match(String(artifactsManifest.lastValidation?.validationSummaryMarkdownPath || ''), /validation-summary\.md$/);
+
   const updateRequestPath = scaffold.createdRequests.find((requestPath) => requestPath.endsWith('/update-branch.bru'));
   assert.ok(updateRequestPath);
   const updateRequest = await nativeManager.getRequest(updateRequestPath!);
