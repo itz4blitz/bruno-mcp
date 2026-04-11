@@ -72,7 +72,7 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
   const overlayCompletion = await session.client.complete({
     argument: {
       name: 'overlay',
-      value: 'nym',
+      value: 'raw',
     },
     ref: {
       name: 'build_feature_slice',

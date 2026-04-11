@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -39,6 +41,35 @@ test('engine HTTP JSON schema export includes route metadata and envelope fields
   assert.ok(properties.engineVersion);
   assert.ok(properties.runtime);
   assert.ok(properties.data);
+  const errorSchemaText = JSON.stringify(schemas.run.error);
+  assert.match(errorSchemaText, /schema_version_mismatch/);
+  assert.match(errorSchemaText, /validation_error/);
+});
+
+test('engine version endpoint matches package version contract', async () => {
+  const packageJson = JSON.parse(await readFile(join(process.cwd(), 'package.json'), 'utf8')) as { version: string };
+  const client = new BrunoEngineClient({
+    baseUrl: 'http://engine.test',
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            engineVersion: packageJson.version,
+            schemaVersion: 1,
+            supportedSchemaVersions: [1],
+          },
+          engineVersion: packageJson.version,
+          runtime: 'bruno',
+          schemaVersion: 1,
+        }),
+        {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        },
+      ),
+  });
+  const version = await client.version();
+  assert.equal(version.engineVersion, packageJson.version);
 });
 
 test('BrunoEngineClient unwraps envelopes and injects bearer auth', async () => {

@@ -1,8 +1,8 @@
 # Client Setup
 
-`bruno-mcp` runs as a stdio MCP server.
+`bruno-mcp` runs as a stdio MCP server by default.
 
-It does not expose an HTTP API.
+It also ships an optional HTTP engine mode for programmatic control-plane use.
 
 ## Local Development
 
@@ -17,6 +17,12 @@ Run built output:
 ```bash
 npm run build
 npm start
+```
+
+Run HTTP engine mode:
+
+```bash
+ENGINE_HTTP_TOKEN=secret npm run engine:http
 ```
 
 ## OpenCode

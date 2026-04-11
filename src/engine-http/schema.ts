@@ -80,6 +80,34 @@ export const engineErrorSchema = z.object({
   error: z.string().min(1),
 });
 
+export const engineValidationErrorSchema = z.object({
+  error: z.literal('validation_error'),
+  issues: z.array(z.unknown()),
+});
+
+export const engineSchemaVersionMismatchErrorSchema = z.object({
+  engineVersion: z.string().min(1),
+  error: z.literal('schema_version_mismatch'),
+  schemaVersion: z.number().int(),
+  supportedSchemaVersions: z.array(z.number().int()).min(1),
+});
+
+export const engineConflictErrorSchema = z.object({
+  error: z.literal('run_already_active'),
+});
+
+export const engineJobNotFoundErrorSchema = z.object({
+  error: z.literal('job_not_found'),
+});
+
+export const engineRequestErrorSchema = z.union([
+  engineErrorSchema,
+  engineValidationErrorSchema,
+  engineSchemaVersionMismatchErrorSchema,
+  engineConflictErrorSchema,
+  engineJobNotFoundErrorSchema,
+]);
+
 export const engineCompatibilitySchema = z
   .object({
     engineVersion: z.string().min(1),
@@ -283,7 +311,7 @@ export function getEngineHttpJsonSchemas() {
         name,
         {
           authRequired: route.authRequired ?? false,
-          error: zodToJsonSchema(engineErrorSchema, `${name}Error`),
+          error: zodToJsonSchema(engineRequestErrorSchema, `${name}Error`),
           method: route.method,
           path: route.path,
           request: route.request ? zodToJsonSchema(route.request, `${name}Request`) : null,

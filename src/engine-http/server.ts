@@ -1,4 +1,5 @@
 import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 
 import { createFeatureSliceManager } from '../bruno/feature-slice.js';
@@ -40,7 +41,14 @@ type EngineHttpServerOptions = {
 };
 
 function getEngineVersion(): string {
-  return '1.0.0';
+  try {
+    const packageJson = JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { version?: string };
+    return packageJson.version || '1.0.0';
+  } catch {
+    return '1.0.0';
+  }
 }
 
 function jsonEnvelope<T>(data: T): EngineEnvelope<T> {
