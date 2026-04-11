@@ -28,6 +28,10 @@
     "README.md",
     "LICENSE"
   ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./engine": "./dist/engine-http/index.js"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
@@ -53,7 +57,8 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@usebruno/filestore": "0.8.1",
     "yaml": "2.8.3",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "zod-to-json-schema": "3.24.6"
   },
   "devDependencies": {
     "@types/node": "^20.19.39",

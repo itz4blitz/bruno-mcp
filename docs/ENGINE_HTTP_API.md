@@ -36,6 +36,25 @@ All successful responses use:
 }
 ```
 
+The repo also exports the engine contract registry from `src/engine-http/schema.ts` via:
+
+- `ENGINE_HTTP_SCHEMA_VERSION`
+- `ENGINE_HTTP_SCHEMA_REGISTRY`
+- `getEngineHttpSchemas()`
+- `getEngineHttpJsonSchemas()`
+
+And a typed client via:
+
+- `BrunoEngineClient`
+- `createBrunoEngineClient()`
+- `BrunoEngineVersionMismatchError`
+
+Preferred import path for Premier:
+
+```ts
+import { createBrunoEngineClient, getEngineHttpJsonSchemas } from 'bruno-mcp/engine';
+```
+
 ## Endpoints
 
 - `GET /engine/health`
@@ -48,6 +67,7 @@ All successful responses use:
 - `POST /engine/validate-run-manifest`
 - `POST /engine/inspect-support-graph`
 - `POST /engine/run`
+- `GET /engine/run-status?jobId=...`
 
 ## Auth
 
@@ -55,6 +75,8 @@ All successful responses use:
 - all other endpoints expect `Authorization: Bearer <ENGINE_HTTP_TOKEN>` when a token is configured
 
 This keeps Premier app auth separate from engine auth. Premier can use any app/session provider it wants, while the engine stays machine-authenticated and provider-agnostic.
+
+The engine also checks the optional `x-bruno-schema-version` request header on authenticated routes. If the caller expects a different schema version, the engine returns `409 schema_version_mismatch` with compatibility details.
 
 ## Artifact bundle
 
@@ -67,8 +89,42 @@ Engine responses return predictable artifact refs for:
 - `findings.json`
 - `coverage.json`
 - `run-report.json`
+- `artifacts.json`
+- `run-summary.md`
 
 These live under `.bruno-mcp/feature-slices/<sliceId>/`.
+
+`artifacts.json` is the stable manifest for the current artifact bundle and last known run metadata.
+
+Async run state is backed by the engine job-store abstraction. The default implementation is file-backed so queued/running/succeeded/failed job metadata survives process-local state better than a raw in-memory map.
+
+## Async runs
+
+`POST /engine/run` supports:
+
+- default synchronous execution
+- `mode: "async"` for queued execution
+
+Async mode returns:
+
+- `jobId`
+- `state`
+- `pollUrl`
+- `artifacts`
+- `correlation`
+
+Then poll with `GET /engine/run-status?jobId=...`.
+
+## Correlation metadata
+
+Run requests may include optional correlation fields:
+
+- `projectId`
+- `jobId`
+- `runId`
+- `requestId`
+
+These are passed through to run reports and `artifacts.json` so Premier can correlate engine activity with control-plane jobs.
 
 ## Premier Integration Notes
 

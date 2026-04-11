@@ -1,6 +1,8 @@
-import { DynamicDataPolicy, FeatureRunProfile, FeatureSliceType } from '../bruno/feature-slice.js';
+import { z } from 'zod';
 
-export const ENGINE_SCHEMA_VERSION = 1;
+import { ENGINE_HTTP_SCHEMA_VERSION, engineInspectContractRequestSchema, engineInspectSliceRequestSchema, enginePlanRequestSchema, engineRunRequestSchema, engineScaffoldRequestSchema, engineValidateRequestSchema } from './schema.js';
+
+export const ENGINE_SCHEMA_VERSION = ENGINE_HTTP_SCHEMA_VERSION;
 
 export interface EngineEnvelope<T> {
   data: T;
@@ -9,44 +11,19 @@ export interface EngineEnvelope<T> {
   schemaVersion: number;
 }
 
-export interface EngineInspectContractRequest {
-  contractPath: string;
+export interface EngineCompatibility {
+  engineVersion: string;
+  schemaVersion: number;
+  supportedSchemaVersions: number[];
 }
 
-export interface EnginePlanRequest {
-  basePath?: string;
-  collectionPath: string;
-  controllerContractPath?: string;
-  convenienceMode?: boolean;
-  featureName: string;
-  featureType: FeatureSliceType;
-  overlay?: string;
-  sourceOfTruth?: string;
-  strictMode?: boolean;
-  targetResource?: string;
+export interface EngineSchemaVersionMismatch extends EngineCompatibility {
+  error: 'schema_version_mismatch';
 }
 
-export interface EngineScaffoldRequest extends EnginePlanRequest {
-  dataPolicy?: DynamicDataPolicy;
-  includeMatrices?: boolean;
-  includeSupportRequests?: boolean;
-}
-
-export interface EngineValidateRequest {
-  collectionPath: string;
-  sliceId: string;
-}
-
-export interface EngineRunRequest {
-  collectionPath: string;
-  env: string;
-  globalEnv?: string;
-  profile?: FeatureRunProfile;
-  sliceId: string;
-  workspacePath?: string;
-}
-
-export interface EngineInspectSliceRequest {
-  collectionPath: string;
-  sliceId: string;
-}
+export type EngineInspectContractRequest = z.infer<typeof engineInspectContractRequestSchema>;
+export type EnginePlanRequest = z.infer<typeof enginePlanRequestSchema>;
+export type EngineScaffoldRequest = z.infer<typeof engineScaffoldRequestSchema>;
+export type EngineValidateRequest = z.infer<typeof engineValidateRequestSchema>;
+export type EngineRunRequest = z.infer<typeof engineRunRequestSchema>;
+export type EngineInspectSliceRequest = z.infer<typeof engineInspectSliceRequestSchema>;

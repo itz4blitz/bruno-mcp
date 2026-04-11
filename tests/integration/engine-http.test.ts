@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -35,10 +35,23 @@ test('Engine HTTP server exposes versioned Premier-friendly endpoints', async (t
 
   const healthResponse = await fetch(`${baseUrl}/engine/health`);
   assert.equal(healthResponse.status, 200);
-  const health = (await healthResponse.json()) as { data: { status: string }; runtime: string; schemaVersion: number };
+  const health = (await healthResponse.json()) as {
+    data: { status: string };
+    engineVersion: string;
+    runtime: string;
+    schemaVersion: number;
+  };
   assert.equal(health.data.status, 'ok');
   assert.equal(health.runtime, 'bruno');
   assert.equal(health.schemaVersion, 1);
+
+  const versionResponse = await fetch(`${baseUrl}/engine/version`);
+  assert.equal(versionResponse.status, 200);
+  const version = (await versionResponse.json()) as {
+    data: { engineVersion: string; schemaVersion: number; supportedSchemaVersions: number[] };
+  };
+  assert.equal(version.data.schemaVersion, 1);
+  assert.ok(version.data.supportedSchemaVersions.includes(1));
 
   const unauthorizedResponse = await fetch(`${baseUrl}/engine/version`, {
     method: 'GET',
@@ -47,6 +60,20 @@ test('Engine HTTP server exposes versioned Premier-friendly endpoints', async (t
     },
   });
   assert.equal(unauthorizedResponse.status, 200);
+
+  const mismatchResponse = await fetch(`${baseUrl}/engine/plan`, {
+    body: JSON.stringify({
+      collectionPath,
+      featureName: 'Branch',
+      featureType: 'resource-crud',
+    }),
+    headers: {
+      ...headers,
+      'x-bruno-schema-version': '999',
+    },
+    method: 'POST',
+  });
+  assert.equal(mismatchResponse.status, 409);
 
   const inspectContractResponse = await fetch(`${baseUrl}/engine/inspect-contract`, {
     body: JSON.stringify({ contractPath }),
@@ -205,7 +232,7 @@ test('Engine HTTP run endpoint returns structured artifacts and run report', asy
   assert.equal(runResponse.status, 200);
   const run = (await runResponse.json()) as {
     data: {
-      artifacts: { coveragePath: string; runReportPath: string };
+      artifacts: { coveragePath: string; runReportPath: string; runSummaryMarkdownPath: string };
       report: {
         exitStatus: string;
         passCount: number;
@@ -222,4 +249,87 @@ test('Engine HTTP run endpoint returns structured artifacts and run report', asy
   assert.equal(typeof run.data.artifacts.coveragePath, 'string');
   assert.ok(Array.isArray(run.data.report.stepResults));
   assert.equal(run.data.report.productDefects.length, 0);
+  assert.equal(typeof run.data.artifacts.runSummaryMarkdownPath, 'string');
+
+  const runSummary = await readFile(run.data.artifacts.runSummaryMarkdownPath, 'utf8');
+  assert.match(runSummary, /# Run Summary/);
+  assert.match(runSummary, /users/i);
+  assert.match(runSummary, /passed/i);
+
+  const validateManifestResponse = await fetch(`${baseUrl}/engine/validate-run-manifest`, {
+    body: JSON.stringify({
+      collectionPath,
+      sliceId: 'users',
+    }),
+    headers,
+    method: 'POST',
+  });
+  assert.equal(validateManifestResponse.status, 200);
+  const validateManifest = (await validateManifestResponse.json()) as {
+    data: { artifacts: { artifactsManifestPath: string; supportGraphPath: string }; validation: { valid: boolean } };
+  };
+  assert.equal(validateManifest.data.validation.valid, true);
+  assert.equal(typeof validateManifest.data.artifacts.supportGraphPath, 'string');
+  assert.equal(typeof validateManifest.data.artifacts.artifactsManifestPath, 'string');
+
+  const asyncRunResponse = await fetch(`${baseUrl}/engine/run`, {
+    body: JSON.stringify({
+      collectionPath,
+      correlation: {
+        projectId: 'project-123',
+        requestId: 'request-456',
+        runId: 'run-789',
+      },
+      env: 'test',
+      mode: 'async',
+      profile: 'support_only',
+      sliceId: 'users',
+    }),
+    headers,
+    method: 'POST',
+  });
+  assert.equal(asyncRunResponse.status, 202);
+  const asyncRun = (await asyncRunResponse.json()) as {
+    data: {
+      artifacts: { artifactsManifestPath: string; runReportPath: string };
+      correlation?: { jobId?: string };
+      jobId: string;
+      pollUrl: string;
+      state: string;
+    };
+  };
+  assert.equal(asyncRun.data.state, 'queued');
+  assert.equal(typeof asyncRun.data.jobId, 'string');
+  assert.equal(asyncRun.data.correlation?.jobId, asyncRun.data.jobId);
+  assert.match(asyncRun.data.pollUrl, /\/engine\/run-status\?jobId=/);
+
+  const pollUrl = new URL(asyncRun.data.pollUrl, baseUrl).toString();
+  let asyncStatus: {
+    data: {
+      correlation?: { jobId?: string; projectId?: string };
+      report?: { correlation?: { jobId?: string; projectId?: string }; exitStatus: string };
+      state: string;
+    };
+  } | null = null;
+  for (let attempt = 0; attempt < 240; attempt += 1) {
+    const statusResponse = await fetch(pollUrl, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(statusResponse.status, 200);
+    asyncStatus = (await statusResponse.json()) as { data: { report?: { exitStatus: string }; state: string } };
+    if (asyncStatus.data.state === 'succeeded') {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(asyncStatus);
+  assert.equal(asyncStatus!.data.state, 'succeeded');
+  assert.equal(asyncStatus!.data.report?.exitStatus, 'passed');
+  assert.equal(asyncStatus!.data.correlation?.jobId, asyncRun.data.jobId);
+  assert.equal(asyncStatus!.data.report?.correlation?.projectId, 'project-123');
+
+  const artifactsManifest = JSON.parse(
+    await readFile(validateManifest.data.artifacts.artifactsManifestPath, 'utf8'),
+  ) as { lastRun?: { correlation?: { projectId?: string }; profile: string; runSummaryMarkdownPath?: string } };
+  assert.equal(artifactsManifest.lastRun?.profile, 'support_only');
+  assert.equal(artifactsManifest.lastRun?.correlation?.projectId, 'project-123');
+  assert.match(String(artifactsManifest.lastRun?.runSummaryMarkdownPath || ''), /run-summary\.md$/);
 });

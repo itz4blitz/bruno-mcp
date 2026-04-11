@@ -270,11 +270,19 @@ export interface FeatureRunManifest {
 
 export interface RunFeatureSliceInput {
   collectionPath: string;
+  correlation?: FeatureRunCorrelationMetadata;
   env: string;
   globalEnv?: string;
   profile?: FeatureRunProfile;
   sliceId: string;
   workspacePath?: string;
+}
+
+export interface FeatureRunCorrelationMetadata {
+  jobId?: string;
+  projectId?: string;
+  requestId?: string;
+  runId?: string;
 }
 
 export interface FeatureRunStepResult {
@@ -343,6 +351,7 @@ export interface FeatureRunReport {
     requestPath: string;
   }>;
   collectionDefects: FeatureRunIssue[];
+  correlation?: FeatureRunCorrelationMetadata;
   env: string;
   exitStatus: 'failed' | 'passed';
   passCount: number;
@@ -355,13 +364,32 @@ export interface FeatureRunReport {
 }
 
 export interface FeatureSliceArtifactBundle {
+  artifactsManifestPath: string;
   coveragePath: string;
   findingsPath: string;
   generatedDataPath: string;
   manifestPath: string;
   runManifestPath: string;
   runReportPath: string;
+  runSummaryMarkdownPath: string;
   supportGraphPath: string;
+}
+
+export interface FeatureSliceArtifactsRunRecord {
+  correlation?: FeatureRunCorrelationMetadata;
+  coveragePath: string;
+  env: string;
+  generatedAt: string;
+  profile: FeatureRunProfile;
+  runReportPath: string;
+  runSummaryMarkdownPath: string;
+}
+
+export interface FeatureSliceArtifactsManifest extends FeatureSliceArtifactBundle {
+  collectionPath: string;
+  lastRun?: FeatureSliceArtifactsRunRecord;
+  sliceId: string;
+  updatedAt: string;
 }
 
 export interface FeatureSliceValidationResult {
@@ -1154,14 +1182,20 @@ export class FeatureSliceManager {
     const supportGraphPath = (await this.getArtifactBundle(collectionPath, sliceId)).supportGraphPath;
     await fs.mkdir(dirname(supportGraphPath), { recursive: true });
     await fs.writeFile(supportGraphPath, `${JSON.stringify(graph, null, 2)}\n`);
+    await this.writeArtifactsManifest(collectionPath, sliceId, {});
     return supportGraphPath;
   }
 
-  private async writeCoverageFile(collectionPath: string, sliceId: string): Promise<string> {
+  private async writeCoverageFile(
+    collectionPath: string,
+    sliceId: string,
+    correlation?: FeatureRunCorrelationMetadata,
+  ): Promise<string> {
     const coverage = await this.inspectCoverageSummary(collectionPath, sliceId);
     const coveragePath = (await this.getArtifactBundle(collectionPath, sliceId)).coveragePath;
     await fs.mkdir(dirname(coveragePath), { recursive: true });
-    await fs.writeFile(coveragePath, `${JSON.stringify(coverage, null, 2)}\n`);
+    await fs.writeFile(coveragePath, `${JSON.stringify({ correlation, ...coverage }, null, 2)}\n`);
+    await this.writeArtifactsManifest(collectionPath, sliceId, {});
     return coveragePath;
   }
 
@@ -1173,7 +1207,90 @@ export class FeatureSliceManager {
     const runReportPath = (await this.getArtifactBundle(collectionPath, sliceId)).runReportPath;
     await fs.mkdir(dirname(runReportPath), { recursive: true });
     await fs.writeFile(runReportPath, `${JSON.stringify(report, null, 2)}\n`);
+    await this.writeArtifactsManifest(collectionPath, sliceId, {
+      lastRun: {
+        correlation: report.correlation,
+        coveragePath: (await this.getArtifactBundle(collectionPath, sliceId)).coveragePath,
+        env: report.env,
+        generatedAt: new Date().toISOString(),
+        profile: report.profile,
+        runReportPath,
+        runSummaryMarkdownPath: (await this.getArtifactBundle(collectionPath, sliceId)).runSummaryMarkdownPath,
+      },
+    });
     return runReportPath;
+  }
+
+  private formatRunSummaryMarkdown(
+    report: FeatureRunReport,
+    coverage: Record<string, unknown>,
+    validation?: FeatureRunManifestValidation,
+  ): string {
+    const failureLines = report.stepResults
+      .filter((step) => !step.passed)
+      .map(
+        (step) =>
+          `- ${step.name} [${step.phase}] ${step.failureReason?.code || 'unknown_failure'}${step.error ? `: ${step.error}` : ''}`,
+      );
+    return [
+      `# Run Summary`,
+      '',
+      `- Slice: ${report.sliceId}`,
+      `- Env: ${report.env}`,
+      `- Profile: ${report.profile}`,
+      `- Exit Status: ${report.exitStatus}`,
+      `- Passed Steps: ${report.passCount}/${report.totalSteps}`,
+      `- Setup Failures: ${report.setupFailures.length}`,
+      `- Collection Defects: ${report.collectionDefects.length}`,
+      `- Product Defects: ${report.productDefects.length}`,
+      `- Cleanup Outcomes: ${report.cleanupOutcomes.length}`,
+      report.correlation ? `- Correlation: ${JSON.stringify(report.correlation)}` : '',
+      '',
+      `## Coverage`,
+      '',
+      '```json',
+      JSON.stringify(coverage, null, 2),
+      '```',
+      '',
+      `## Failed Steps`,
+      '',
+      ...(failureLines.length > 0 ? failureLines : ['- none']),
+      validation
+        ? ['', '## Manifest Validation', '', ...validation.errors.map((error) => `- error: ${error}`), ...validation.warnings.map((warning) => `- warning: ${warning}`)]
+        : [],
+    ]
+      .flat()
+      .filter((line) => line !== '')
+      .join('\n');
+  }
+
+  private async writeRunSummaryMarkdownFile(
+    collectionPath: string,
+    sliceId: string,
+    report: FeatureRunReport,
+  ): Promise<string> {
+    const [bundle, coverage, validation] = await Promise.all([
+      this.getArtifactBundle(collectionPath, sliceId),
+      this.inspectCoverageSummary(collectionPath, sliceId),
+      this.validateRunManifest(collectionPath, sliceId),
+    ]);
+    await fs.mkdir(dirname(bundle.runSummaryMarkdownPath), { recursive: true });
+    await fs.writeFile(
+      bundle.runSummaryMarkdownPath,
+      `${this.formatRunSummaryMarkdown(report, coverage, validation)}\n`,
+    );
+    await this.writeArtifactsManifest(collectionPath, sliceId, {
+      lastRun: {
+        correlation: report.correlation,
+        coveragePath: bundle.coveragePath,
+        env: report.env,
+        generatedAt: new Date().toISOString(),
+        profile: report.profile,
+        runReportPath: bundle.runReportPath,
+        runSummaryMarkdownPath: bundle.runSummaryMarkdownPath,
+      },
+    });
+    return bundle.runSummaryMarkdownPath;
   }
 
   async validateRunManifest(collectionPath: string, sliceId: string): Promise<FeatureRunManifestValidation> {
@@ -1229,17 +1346,48 @@ export class FeatureSliceManager {
     };
   }
 
+  private getArtifactsManifestPath(collectionPath: string, sliceId: string): string {
+    return join(this.getMetadataRoot(collectionPath, sliceId), 'artifacts.json');
+  }
+
   async getArtifactBundle(collectionPath: string, sliceId: string): Promise<FeatureSliceArtifactBundle> {
     const metadataRoot = this.getMetadataRoot(collectionPath, sliceId);
     return {
+      artifactsManifestPath: this.getArtifactsManifestPath(collectionPath, sliceId),
       coveragePath: join(metadataRoot, 'coverage.json'),
       findingsPath: this.getFindingsPath(collectionPath, sliceId),
       generatedDataPath: this.getGeneratedDataPath(collectionPath, sliceId),
       manifestPath: this.getManifestPath(collectionPath, sliceId),
       runManifestPath: this.getRunManifestPath(collectionPath, sliceId),
       runReportPath: join(metadataRoot, 'run-report.json'),
+      runSummaryMarkdownPath: join(metadataRoot, 'run-summary.md'),
       supportGraphPath: join(metadataRoot, 'support-graph.json'),
     };
+  }
+
+  private async writeArtifactsManifest(
+    collectionPath: string,
+    sliceId: string,
+    update: Partial<FeatureSliceArtifactsManifest> & { lastRun?: FeatureSliceArtifactsRunRecord },
+  ): Promise<string> {
+    const bundle = await this.getArtifactBundle(collectionPath, sliceId);
+    const manifestPath = bundle.artifactsManifestPath;
+    let existing: FeatureSliceArtifactsManifest | null = null;
+    try {
+      existing = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as FeatureSliceArtifactsManifest;
+    } catch {
+      existing = null;
+    }
+    const next: FeatureSliceArtifactsManifest = {
+      ...bundle,
+      collectionPath,
+      lastRun: update.lastRun ?? existing?.lastRun,
+      sliceId,
+      updatedAt: new Date().toISOString(),
+    };
+    await fs.mkdir(dirname(manifestPath), { recursive: true });
+    await fs.writeFile(manifestPath, `${JSON.stringify(next, null, 2)}\n`);
+    return manifestPath;
   }
 
   async validateFeatureSlice(collectionPath: string, sliceId: string): Promise<FeatureSliceValidationResult> {
@@ -1321,6 +1469,7 @@ export class FeatureSliceManager {
     const report: FeatureRunReport = {
       cleanupOutcomes,
       collectionDefects,
+      correlation: input.correlation,
       env: input.env,
       exitStatus:
         collectionDefects.length === 0 && productDefects.length === 0 && setupFailures.length === 0
@@ -1335,7 +1484,8 @@ export class FeatureSliceManager {
       totalSteps: steps.length,
     };
     await this.writeRunReportFile(input.collectionPath, input.sliceId, report);
-    await this.writeCoverageFile(input.collectionPath, input.sliceId);
+    await this.writeCoverageFile(input.collectionPath, input.sliceId, input.correlation);
+    await this.writeRunSummaryMarkdownFile(input.collectionPath, input.sliceId, report);
     return report;
   }
 
@@ -2674,6 +2824,7 @@ export class FeatureSliceManager {
     };
     const manifestPath = await this.writeManifest(plan.collectionPath, plan.sliceId, manifest);
     await this.writeGeneratedDataFile(plan.collectionPath, plan.sliceId, dynamicData);
+    await this.writeArtifactsManifest(plan.collectionPath, plan.sliceId, {});
     return manifestPath;
   }
 

@@ -57,6 +57,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 export { createBrunoMcpServer } from './server.js';
 export { createEngineHttpServer } from './engine-http/server.js';
+export {
+  BrunoEngineClient,
+  BrunoEngineHttpError,
+  BrunoEngineProtocolError,
+  BrunoEngineVersionMismatchError,
+  createBrunoEngineClient,
+} from './engine-http/client.js';
+export * from './engine-http/job-store.js';
 export * from './bruno/types.js';
 export * from './bruno/generator.js';
 export * from './bruno/collection.js';
@@ -64,5 +72,6 @@ export * from './bruno/environment.js';
 export * from './bruno/controller-contract.js';
 export * from './bruno/feature-slice.js';
 export * from './engine-http/types.js';
+export * from './engine-http/schema.js';
 export * from './bruno/openapi.js';
 export * from './bruno/request.js';

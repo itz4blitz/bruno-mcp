@@ -98,6 +98,11 @@ test('FeatureSliceManager plans and scaffolds a strict feature slice', async () 
   })) as { collectionDefects: unknown[]; coverageGaps: unknown[] };
   assert.deepEqual(audit.coverageGaps, []);
   assert.deepEqual(audit.collectionDefects, []);
+
+  const artifactsManifest = JSON.parse(
+    await readFile(join(collectionPath, '.bruno-mcp', 'feature-slices', 'users', 'artifacts.json'), 'utf8'),
+  ) as { artifactsManifestPath: string };
+  assert.match(artifactsManifest.artifactsManifestPath, /artifacts\.json$/);
 });
 
 test('FeatureSliceManager plans controller-aware Branch slice from OpenAPI contract', async () => {
