@@ -434,12 +434,20 @@ export class BruGenerator {
    * Escape string values for BRU format
    */
   private escapeString(value: string): string {
+    if (this.isTemplateScalar(value)) {
+      return value.trim();
+    }
+
     // BRU uses single quotes for strings
     if (value.includes("'") || value.includes('\n') || value.includes('\r')) {
       // Use multiline string format for complex strings
       return `'''${value}'''`;
     }
     return `'${value}'`;
+  }
+
+  private isTemplateScalar(value: string): boolean {
+    return /^(?:\{\{[^{}\n]+\}\})+$/.test(value.trim());
   }
 
   /**

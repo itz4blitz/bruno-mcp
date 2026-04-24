@@ -160,7 +160,10 @@ export async function saveCollectionDocument(
     await fs.writeFile(format.configPath, JSON.stringify(document.brunoConfig, null, 2));
 
     if (hasCollectionRootContent(document.collectionRoot)) {
-      const content = stringifyCollection(document.collectionRoot as never, {}, { format: 'bru' });
+      const content = normalizeBruTemplateScalars(
+        stringifyCollection(document.collectionRoot as never, {}, { format: 'bru' }),
+        'bru',
+      );
       await fs.writeFile(format.defaultsPath, content);
     } else if (await exists(format.defaultsPath)) {
       await fs.unlink(format.defaultsPath);
@@ -207,7 +210,10 @@ export async function saveFolderDocument(
 
   const folderFilePath = join(resolvedFolderPath, format.folderFileName);
   if (hasFolderDocumentContent(folderDocument)) {
-    const content = stringifyFolder(folderDocument as never, { format: format.format });
+    const content = normalizeBruTemplateScalars(
+      stringifyFolder(folderDocument as never, { format: format.format }),
+      format.format,
+    );
     await fs.writeFile(folderFilePath, content);
   } else if (await exists(folderFilePath)) {
     await fs.unlink(folderFilePath);
@@ -227,7 +233,10 @@ export async function saveRequestDocument(
 ): Promise<void> {
   const resolvedRequestPath = resolve(requestPath);
   const format = detectFileFormat(resolvedRequestPath);
-  const content = stringifyRequest(requestDocument as never, { format });
+  const content = normalizeBruTemplateScalars(
+    stringifyRequest(requestDocument as never, { format }),
+    format,
+  );
   await fs.mkdir(dirname(resolvedRequestPath), { recursive: true });
   await fs.writeFile(resolvedRequestPath, content);
 }
@@ -247,7 +256,10 @@ export async function saveEnvironmentDocument(
 ): Promise<void> {
   const resolvedEnvironmentPath = resolve(environmentPath);
   const format = detectFileFormat(resolvedEnvironmentPath);
-  const content = stringifyEnvironment(environmentDocument as never, { format });
+  const content = normalizeBruTemplateScalars(
+    stringifyEnvironment(environmentDocument as never, { format }),
+    format,
+  );
   await fs.mkdir(dirname(resolvedEnvironmentPath), { recursive: true });
   await fs.writeFile(resolvedEnvironmentPath, content);
 }
@@ -421,6 +433,14 @@ async function walkCollection(
       requestPaths.push(fullPath);
     }
   }
+}
+
+function normalizeBruTemplateScalars(content: string, format: BrunoFileFormat): string {
+  if (format !== 'bru') {
+    return content;
+  }
+
+  return content.replace(/(:\s*)'((?:\{\{[^'\n]+\}\})+)'/g, '$1$2');
 }
 
 function detectFileFormat(filePath: string): BrunoFileFormat {

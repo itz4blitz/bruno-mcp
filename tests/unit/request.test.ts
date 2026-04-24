@@ -29,6 +29,8 @@ test('addTestScript and updateRequest preserve existing supported sections', asy
     url: '{{baseUrl}}/users',
     headers: {
       Accept: 'application/json',
+      'X-Auth-Token': '{{authToken}}',
+      'X-Tenant-Id': '{{tenantId}}',
     },
     auth: {
       type: 'bearer',
@@ -71,6 +73,10 @@ test('addTestScript and updateRequest preserve existing supported sections', asy
   assert.match(content, /body:json/);
   assert.match(content, /tests \{/);
   assert.match(content, /expect\(res.status\)\.to.equal\(200\)/);
+  assert.match(content, /X-Auth-Token: \{\{authToken\}\}/);
+  assert.match(content, /X-Tenant-Id: \{\{tenantId\}\}/);
+  assert.doesNotMatch(content, /X-Auth-Token: '\{\{authToken\}\}'/);
+  assert.doesNotMatch(content, /X-Tenant-Id: '\{\{tenantId\}\}'/);
 
   const loaded = await requestBuilder.loadRequest(bruFilePath);
   assert.equal(loaded.http.url, '{{baseUrl}}/users/{{id}}');
