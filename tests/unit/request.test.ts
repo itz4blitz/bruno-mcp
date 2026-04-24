@@ -171,6 +171,38 @@ test('createRequest supports GraphQL requests and preserves variables', async ()
   assert.equal(loaded.body?.variables, '{\n  "limit": 5\n}');
 });
 
+test('createRequest defaults request auth to inherit when auth is omitted', async () => {
+  const rootPath = await import('node:fs/promises').then(({ mkdtemp }) =>
+    mkdtemp(join(tmpdir(), 'bruno-request-')),
+  );
+  const collectionManager = createCollectionManager();
+  const requestBuilder = createRequestBuilder();
+
+  const collection = await collectionManager.createCollection({
+    name: 'request-inherit-auth',
+    outputPath: rootPath,
+  });
+
+  assert.equal(collection.success, true);
+
+  const created = await requestBuilder.createRequest({
+    collectionPath: collection.path as string,
+    name: 'Get Widgets',
+    method: 'GET',
+    url: '{{baseUrl}}/widgets',
+  });
+
+  assert.equal(created.success, true);
+
+  const content = await readFile(created.path as string, 'utf8');
+  assert.match(content, /auth: inherit/);
+  assert.doesNotMatch(content, /auth:(bearer|basic|oauth2|api-key|digest|none)\s*\{/);
+
+  const loaded = await requestBuilder.loadRequest(created.path as string);
+  assert.equal(loaded.http.auth, 'inherit');
+  assert.equal(loaded.auth, undefined);
+});
+
 test('createRequest rejects invalid GraphQL variables JSON', async () => {
   const rootPath = await import('node:fs/promises').then(({ mkdtemp }) =>
     mkdtemp(join(tmpdir(), 'bruno-request-')),

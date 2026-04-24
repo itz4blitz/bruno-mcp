@@ -6,6 +6,7 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
 
 export type AuthType = 'none' | 'bearer' | 'basic' | 'oauth2' | 'api-key' | 'digest';
+export type RequestAuthMode = AuthType | 'inherit';
 
 export type BodyType =
   | 'none'
@@ -45,7 +46,7 @@ export interface BruHttpRequest {
   method: HttpMethod;
   url: string;
   body: BodyType;
-  auth: AuthType;
+  auth: RequestAuthMode;
 }
 
 // Authentication configurations
@@ -170,8 +171,8 @@ export interface CreateRequestInput {
     }>;
   };
   auth?: {
-    type: AuthType;
-    config: Record<string, string>;
+    type: RequestAuthMode;
+    config?: Record<string, string>;
   };
   query?: Record<string, string | number | boolean>;
   folder?: string;

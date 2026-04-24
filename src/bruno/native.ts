@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 
-import { AuthType, BodyType, BrunoError, FileOperationResult, HttpMethod } from './types.js';
+import { BodyType, BrunoError, FileOperationResult, HttpMethod, RequestAuthMode } from './types.js';
 import {
   DetectedCollectionFormat,
   createEmptyRequestRoot,
@@ -24,7 +24,7 @@ import {
 type VariablePatchValue = string | number | boolean;
 
 export interface RequestDefaultsPatch {
-  auth?: { config?: Record<string, string>; type: AuthType };
+  auth?: { config?: Record<string, string>; type: RequestAuthMode };
   docs?: string;
   headers?: Record<string, string>;
   postResponseScript?: string;
@@ -563,8 +563,13 @@ export class BrunoNativeManager {
     return nextDocument;
   }
 
-  private buildNativeAuth(type: AuthType, config: Record<string, string>): Record<string, unknown> {
+  private buildNativeAuth(
+    type: RequestAuthMode,
+    config: Record<string, string>,
+  ): Record<string, unknown> {
     switch (type) {
+      case 'inherit':
+        return { mode: 'inherit' };
       case 'bearer':
         return { bearer: { token: config.token || '' }, mode: 'bearer' };
       case 'basic':

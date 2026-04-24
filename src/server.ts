@@ -30,19 +30,19 @@ import { createRequestBuilder } from './bruno/request.js';
 import { createWorkspaceManager } from './bruno/workspace.js';
 import {
   AddTestScriptInput,
-  AuthType,
   BodyType,
   CreateCollectionInput,
   CreateEnvironmentInput,
   CreateRequestInput,
   CreateTestSuiteInput,
   HttpMethod,
+  RequestAuthMode,
 } from './bruno/types.js';
 
 type ToolSchema = Record<string, z.ZodTypeAny>;
 
 const METHOD_VALUES = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
-const AUTH_VALUES = ['none', 'bearer', 'basic', 'oauth2', 'api-key', 'digest'] as const;
+const AUTH_VALUES = ['none', 'inherit', 'bearer', 'basic', 'oauth2', 'api-key', 'digest'] as const;
 const BODY_VALUES = [
   'none',
   'json',
@@ -81,7 +81,7 @@ const requestBodySchema = z.object({
 
 const requestAuthSchema = z.object({
   type: z.enum(AUTH_VALUES),
-  config: z.record(z.string()),
+  config: z.record(z.string()).optional(),
 });
 
 const requestAssertionSchema = z.object({
@@ -103,7 +103,7 @@ const createCollectionToolSchema: ToolSchema = {
 const createEnvironmentToolSchema: ToolSchema = {
   collectionPath: z.string().min(1, 'Collection path is required'),
   name: z.string().min(1, 'Environment name is required'),
-  variables: z.record(z.union([z.string(), z.number(), z.boolean()])),
+  variables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
 };
 
 const createRequestToolSchema: ToolSchema = {
@@ -266,6 +266,7 @@ const environmentPathToolSchema: ToolSchema = {
 const updateEnvironmentToolSchema: ToolSchema = {
   collectionPath: z.string().min(1, 'Collection path is required'),
   environmentName: z.string().min(1, 'Environment name is required'),
+  variables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
   set: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
   unset: z.array(z.string()).optional(),
 };
@@ -526,12 +527,14 @@ export class BrunoMcpServer {
       },
       async (rawArgs) => {
         try {
-          const args = rawArgs as CreateEnvironmentInput;
+          const args = rawArgs as CreateEnvironmentInput & {
+            variables?: Record<string, boolean | number | string>;
+          };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const result = await this.nativeManager.createEnvironment(
             args.collectionPath,
             args.name,
-            args.variables,
+            args.variables || {},
           );
 
           return result.success
@@ -577,8 +580,8 @@ export class BrunoMcpServer {
               formUrlEncoded?: Array<{ name: string; value: string }>;
             };
             auth?: {
-              type: AuthType;
-              config: Record<string, string>;
+              type: RequestAuthMode;
+              config?: Record<string, string>;
             };
             query?: Record<string, string | number | boolean>;
             folder?: string;
@@ -1422,14 +1425,19 @@ export class BrunoMcpServer {
           const args = rawArgs as {
             collectionPath: string;
             environmentName: string;
+            variables?: Record<string, string | number | boolean>;
             set?: Record<string, string | number | boolean>;
             unset?: string[];
           };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const set = {
+            ...args.variables,
+            ...args.set,
+          };
           const result = await this.nativeManager.updateEnvironmentVariables(
             args.collectionPath,
             args.environmentName,
-            args.set || {},
+            set,
             args.unset || [],
           );
           return result.success
@@ -1471,7 +1479,8 @@ export class BrunoMcpServer {
       'inspect_controller_contract',
       {
         title: 'Inspect Controller Contract',
-        description: 'Parse an OpenAPI contract and normalize it into controller contracts suitable for feature-slice planning.',
+        description:
+          'Parse an OpenAPI contract and normalize it into controller contracts suitable for feature-slice planning.',
         inputSchema: inspectControllerContractToolSchema,
       },
       async (rawArgs) => {
@@ -1538,7 +1547,8 @@ export class BrunoMcpServer {
           };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const controllerContract = args.controllerContractPath
-            ? (await this.loadControllerContract(args.controllerContractPath, args.featureName)) || undefined
+            ? (await this.loadControllerContract(args.controllerContractPath, args.featureName)) ||
+              undefined
             : undefined;
           const result = await this.featureSliceManager.planFeatureSlice({
             ...args,
@@ -1578,7 +1588,8 @@ export class BrunoMcpServer {
           };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
           const controllerContract = args.controllerContractPath
-            ? (await this.loadControllerContract(args.controllerContractPath, args.featureName)) || undefined
+            ? (await this.loadControllerContract(args.controllerContractPath, args.featureName)) ||
+              undefined
             : undefined;
           const result = await this.featureSliceManager.scaffoldFeatureSlice({
             ...args,
@@ -1762,7 +1773,10 @@ export class BrunoMcpServer {
         try {
           const args = rawArgs as { collectionPath: string; sliceId: string };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
-          const result = await this.featureSliceManager.inspectRunManifest(args.collectionPath, args.sliceId);
+          const result = await this.featureSliceManager.inspectRunManifest(
+            args.collectionPath,
+            args.sliceId,
+          );
           return this.jsonResult(result);
         } catch (error) {
           return this.errorResult(this.getErrorMessage('inspecting feature run manifest', error));
@@ -1774,14 +1788,18 @@ export class BrunoMcpServer {
       'validate_feature_run_manifest',
       {
         title: 'Validate Feature Run Manifest',
-        description: 'Validate that a feature run manifest points at existing request and data files and has stable step metadata.',
+        description:
+          'Validate that a feature run manifest points at existing request and data files and has stable step metadata.',
         inputSchema: validateFeatureRunManifestToolSchema,
       },
       async (rawArgs) => {
         try {
           const args = rawArgs as { collectionPath: string; sliceId: string };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
-          const result = await this.featureSliceManager.validateRunManifest(args.collectionPath, args.sliceId);
+          const result = await this.featureSliceManager.validateRunManifest(
+            args.collectionPath,
+            args.sliceId,
+          );
           return this.jsonResult(result);
         } catch (error) {
           return this.errorResult(this.getErrorMessage('validating feature run manifest', error));
@@ -1800,10 +1818,15 @@ export class BrunoMcpServer {
         try {
           const args = rawArgs as { collectionPath: string; sliceId: string };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
-          const result = await this.featureSliceManager.inspectSupportGraph(args.collectionPath, args.sliceId);
+          const result = await this.featureSliceManager.inspectSupportGraph(
+            args.collectionPath,
+            args.sliceId,
+          );
           return this.jsonResult(result);
         } catch (error) {
-          return this.errorResult(this.getErrorMessage('inspecting feature slice support graph', error));
+          return this.errorResult(
+            this.getErrorMessage('inspecting feature slice support graph', error),
+          );
         }
       },
     );
@@ -1969,7 +1992,10 @@ export class BrunoMcpServer {
         const collectionPath = this.getTemplateVariable(variables, 'collectionPath');
         const sliceId = this.getTemplateVariable(variables, 'sliceId');
         await this.assertPathAllowed(collectionPath, 'Collection path');
-        const manifest = await this.featureSliceManager.generateRunManifest(collectionPath, sliceId);
+        const manifest = await this.featureSliceManager.generateRunManifest(
+          collectionPath,
+          sliceId,
+        );
         return this.jsonResource(uri.toString(), manifest);
       },
     );
@@ -2268,8 +2294,8 @@ Prefer:
       formUrlEncoded?: Array<{ name: string; value: string }>;
     };
     auth?: {
-      type: AuthType;
-      config: Record<string, string>;
+      type: RequestAuthMode;
+      config?: Record<string, string>;
     };
     query?: Record<string, string | number | boolean>;
     folder?: string;
@@ -2580,8 +2606,12 @@ Prefer:
     const contracts = await this.openApiContractManager.ingestFile(contractPath);
     const normalizedFeatureName = featureName.toLowerCase();
     return (
-      contracts.find((contract) => contract.controllerName.toLowerCase() === normalizedFeatureName) ||
-      contracts.find((contract) => contract.controllerName.toLowerCase().includes(normalizedFeatureName)) ||
+      contracts.find(
+        (contract) => contract.controllerName.toLowerCase() === normalizedFeatureName,
+      ) ||
+      contracts.find((contract) =>
+        contract.controllerName.toLowerCase().includes(normalizedFeatureName),
+      ) ||
       contracts[0] ||
       null
     );
@@ -2672,7 +2702,7 @@ Prefer:
 
   private toDefaultsPatch(args: Record<string, unknown>) {
     return {
-      auth: args.auth as { config?: Record<string, string>; type: AuthType } | undefined,
+      auth: args.auth as { config?: Record<string, string>; type: RequestAuthMode } | undefined,
       docs: args.docs as string | undefined,
       headers: args.headers as Record<string, string> | undefined,
       postResponseScript: args.postResponseScript as string | undefined,
@@ -2694,7 +2724,7 @@ Prefer:
       assertions: args.assertions as
         | Array<{ enabled?: boolean; name: string; value: string }>
         | undefined,
-      auth: args.auth as { config?: Record<string, string>; type: AuthType } | undefined,
+      auth: args.auth as { config?: Record<string, string>; type: RequestAuthMode } | undefined,
       body: args.body as
         | {
             content?: string;

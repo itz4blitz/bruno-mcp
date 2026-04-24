@@ -17,6 +17,7 @@ import {
   CreateRequestInput,
   FileOperationResult,
   HttpMethod,
+  RequestAuthMode,
 } from './types.js';
 import { generateBruFile } from './generator.js';
 
@@ -311,7 +312,7 @@ export class RequestBuilder {
         method: input.method,
         url: input.url,
         body: input.body?.type || 'none',
-        auth: input.auth?.type || 'none',
+        auth: input.auth?.type || 'inherit',
       },
     };
 
@@ -401,7 +402,7 @@ export class RequestBuilder {
         method: httpBlock.name.toUpperCase() as HttpMethod,
         url: this.toStringValue(httpFields.url) || '',
         body: this.parseHttpBodyMode(this.toStringValue(httpFields.body)),
-        auth: (this.toStringValue(httpFields.auth) as AuthType) || 'none',
+        auth: (this.toStringValue(httpFields.auth) as RequestAuthMode) || 'none',
       },
     };
 
@@ -569,8 +570,8 @@ export class RequestBuilder {
       throw new BrunoError('Binary body requires a file path', 'VALIDATION_ERROR');
     }
 
-    if (input.auth && input.auth.type !== 'none') {
-      this.validateAuthConfig(input.auth.type, input.auth.config);
+    if (input.auth && input.auth.type !== 'none' && input.auth.type !== 'inherit') {
+      this.validateAuthConfig(input.auth.type, input.auth.config || {});
     }
   }
 
@@ -643,9 +644,11 @@ export class RequestBuilder {
    * Build request auth configuration.
    */
   private buildBruAuth(input?: CreateRequestInput['auth']): BruAuth | undefined {
-    if (!input || input.type === 'none') {
+    if (!input || input.type === 'none' || input.type === 'inherit') {
       return undefined;
     }
+
+    const config = input.config || {};
 
     const auth: BruAuth = {
       type: input.type,
@@ -654,38 +657,38 @@ export class RequestBuilder {
     switch (input.type) {
       case 'bearer':
         auth.bearer = {
-          token: input.config.token || '{{token}}',
+          token: config.token || '{{token}}',
         };
         break;
       case 'basic':
         auth.basic = {
-          username: input.config.username || '{{username}}',
-          password: input.config.password || '{{password}}',
+          username: config.username || '{{username}}',
+          password: config.password || '{{password}}',
         };
         break;
       case 'oauth2':
         auth.oauth2 = {
-          grantType: this.toGrantType(input.config.grantType || input.config.grant_type),
-          accessTokenUrl: input.config.accessTokenUrl || input.config.access_token_url,
-          authorizationUrl: input.config.authorizationUrl || input.config.authorization_url,
-          clientId: input.config.clientId || input.config.client_id,
-          clientSecret: input.config.clientSecret || input.config.client_secret,
-          scope: input.config.scope,
-          username: input.config.username,
-          password: input.config.password,
+          grantType: this.toGrantType(config.grantType || config.grant_type),
+          accessTokenUrl: config.accessTokenUrl || config.access_token_url,
+          authorizationUrl: config.authorizationUrl || config.authorization_url,
+          clientId: config.clientId || config.client_id,
+          clientSecret: config.clientSecret || config.client_secret,
+          scope: config.scope,
+          username: config.username,
+          password: config.password,
         };
         break;
       case 'api-key':
         auth.apikey = {
-          key: input.config.key || 'X-API-Key',
-          value: input.config.value || '{{apiKey}}',
-          in: (input.config.in as 'header' | 'query') || 'header',
+          key: config.key || 'X-API-Key',
+          value: config.value || '{{apiKey}}',
+          in: (config.in as 'header' | 'query') || 'header',
         };
         break;
       case 'digest':
         auth.digest = {
-          username: input.config.username || '{{username}}',
-          password: input.config.password || '{{password}}',
+          username: config.username || '{{username}}',
+          password: config.password || '{{password}}',
         };
         break;
     }
@@ -771,8 +774,8 @@ export class RequestBuilder {
   /**
    * Parse the auth block from a BRU file.
    */
-  private parseAuthBlock(authType: AuthType, blocks: ParsedBlock[]): BruAuth | undefined {
-    if (!authType || authType === 'none') {
+  private parseAuthBlock(authType: RequestAuthMode, blocks: ParsedBlock[]): BruAuth | undefined {
+    if (!authType || authType === 'none' || authType === 'inherit') {
       return undefined;
     }
 

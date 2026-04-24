@@ -35,6 +35,37 @@ test('MCP server exposes working Bruno collection tools over stdio', async (t) =
   });
   assert.match(environmentText, /Created environment/);
 
+  const emptyEnvironmentText = await callToolText(session.client, 'create_environment', {
+    collectionPath,
+    name: 'empty',
+  });
+  assert.match(emptyEnvironmentText, /Created environment/);
+
+  const emptyEnvironment = JSON.parse(
+    await callToolText(session.client, 'get_environment', {
+      collectionPath,
+      environmentName: 'empty',
+    }),
+  ) as { variables: Record<string, string> };
+  assert.deepEqual(emptyEnvironment.variables, {});
+
+  const updateEnvironmentAliasText = await callToolText(session.client, 'update_environment_vars', {
+    collectionPath,
+    environmentName: 'empty',
+    variables: {
+      tenantId: 85,
+    },
+  });
+  assert.match(updateEnvironmentAliasText, /Updated environment/);
+
+  const updatedAliasEnvironment = JSON.parse(
+    await callToolText(session.client, 'get_environment', {
+      collectionPath,
+      environmentName: 'empty',
+    }),
+  ) as { variables: Record<string, string> };
+  assert.deepEqual(updatedAliasEnvironment.variables, { tenantId: '85' });
+
   const requestText = await callToolText(session.client, 'create_request', {
     collectionPath,
     name: 'Ping Request',
