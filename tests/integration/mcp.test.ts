@@ -77,6 +77,48 @@ test('MCP server exposes working Bruno collection tools over stdio', async (t) =
   });
   assert.match(requestText, /Created request/);
 
+  const folderDefaultsText = await callToolText(session.client, 'update_folder_defaults', {
+    collectionPath,
+    folderPath: 'audited',
+    tests: `test("response status is successful", function () {
+  expect(res.getStatus()).to.be.oneOf([200, 201, 202, 204]);
+});
+
+test("response is not an HTML error page", function () {
+  const contentType = String(res.getHeader("content-type") || "").toLowerCase();
+  expect(contentType).to.not.contain("text/html");
+});`,
+  });
+  assert.match(folderDefaultsText, /Updated folder defaults/);
+
+  const auditedRequestText = await callToolText(session.client, 'create_request', {
+    collectionPath,
+    name: 'Get Audited User',
+    method: 'GET',
+    url: '{{baseUrl}}/users/{{id}}',
+    folder: 'audited',
+  });
+  assert.match(auditedRequestText, /Created request/);
+
+  const qualityAudit = JSON.parse(
+    await callToolText(session.client, 'audit_collection_quality', {
+      collectionPath,
+      includeRequests: true,
+      requestPathPrefix: 'audited',
+    }),
+  ) as {
+    requests?: Array<{ depth: string; issues: string[] }>;
+    summary: { shallowRequests: number; totalRequests: number };
+  };
+  assert.equal(qualityAudit.summary.totalRequests, 1);
+  assert.equal(qualityAudit.summary.shallowRequests, 1);
+  assert.ok(qualityAudit.requests?.[0]?.issues.includes('baseline-only-tests'));
+
+  const auditResource = await session.client.readResource({
+    uri: `bruno://collection-audit/${encodeURIComponent(collectionPath)}`,
+  });
+  assert.match(JSON.stringify(auditResource), /enterpriseReadinessScore/);
+
   const graphqlText = await callToolText(session.client, 'create_request', {
     collectionPath,
     name: 'List Users GraphQL',
@@ -173,8 +215,8 @@ test('MCP server exposes working Bruno collection tools over stdio', async (t) =
   const statsText = await callToolText(session.client, 'get_collection_stats', {
     collectionPath,
   });
-  assert.match(statsText, /Total requests: 10/);
-  assert.match(statsText, /GET: 4/);
+  assert.match(statsText, /Total requests: 12/);
+  assert.match(statsText, /GET: 5/);
   assert.match(statsText, /POST: 4/);
   assert.match(statsText, /PUT: 1/);
   assert.match(statsText, /DELETE: 1/);

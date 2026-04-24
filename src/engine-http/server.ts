@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 
 import { createFeatureSliceManager } from '../bruno/feature-slice.js';
-import type { FeatureSliceManager } from '../bruno/feature-slice.js';
 import { createBrunoNativeManager } from '../bruno/native.js';
 import { createOpenApiContractManager } from '../bruno/openapi.js';
 import { createRequestBuilder } from '../bruno/request.js';
@@ -13,7 +12,6 @@ import { EngineRunJobStore, JsonFileEngineRunJobStore } from './job-store.js';
 import {
   ENGINE_HTTP_SCHEMA_REGISTRY,
   engineEnvelopeSchema,
-  engineErrorSchema,
   engineInspectContractRequestSchema,
   engineInspectSliceRequestSchema,
   enginePlanRequestSchema,
@@ -179,7 +177,10 @@ export class EngineHttpServer {
         return;
       }
 
-      if (request.method !== 'POST' && !(request.method === 'GET' && url.pathname === '/engine/run-status')) {
+      if (
+        request.method !== 'POST' &&
+        !(request.method === 'GET' && url.pathname === '/engine/run-status')
+      ) {
         writeJson(response, 405, { error: 'method_not_allowed' });
         return;
       }
@@ -191,11 +192,21 @@ export class EngineHttpServer {
             engineInspectContractRequestSchema,
           );
           const controllers = await this.openApiContractManager.ingestFile(body.contractPath);
-          writeJson(response, 200, this.validateSuccessEnvelopeForRoute('inspectContract', { contractPath: body.contractPath, controllers }));
+          writeJson(
+            response,
+            200,
+            this.validateSuccessEnvelopeForRoute('inspectContract', {
+              contractPath: body.contractPath,
+              controllers,
+            }),
+          );
           return;
         }
         case '/engine/plan': {
-          const body = validateBody(await readJsonBody<EnginePlanRequest>(request), enginePlanRequestSchema);
+          const body = validateBody(
+            await readJsonBody<EnginePlanRequest>(request),
+            enginePlanRequestSchema,
+          );
           const controllerContract = body.controllerContractPath
             ? await this.loadControllerContract(body.controllerContractPath, body.featureName)
             : undefined;
@@ -203,12 +214,22 @@ export class EngineHttpServer {
             ...body,
             controllerContract,
           });
-          const artifacts = await this.featureSliceManager.getArtifactBundle(body.collectionPath, plan.sliceId);
-          writeJson(response, 200, this.validateSuccessEnvelopeForRoute('plan', { artifacts, plan }));
+          const artifacts = await this.featureSliceManager.getArtifactBundle(
+            body.collectionPath,
+            plan.sliceId,
+          );
+          writeJson(
+            response,
+            200,
+            this.validateSuccessEnvelopeForRoute('plan', { artifacts, plan }),
+          );
           return;
         }
         case '/engine/scaffold': {
-          const body = validateBody(await readJsonBody<EngineScaffoldRequest>(request), engineScaffoldRequestSchema);
+          const body = validateBody(
+            await readJsonBody<EngineScaffoldRequest>(request),
+            engineScaffoldRequestSchema,
+          );
           const controllerContract = body.controllerContractPath
             ? await this.loadControllerContract(body.controllerContractPath, body.featureName)
             : undefined;
@@ -216,41 +237,99 @@ export class EngineHttpServer {
             ...body,
             controllerContract,
           });
-          const artifacts = await this.featureSliceManager.getArtifactBundle(body.collectionPath, slugify(body.featureName));
-          writeJson(response, 200, this.validateSuccessEnvelopeForRoute('scaffold', { artifacts, scaffold }));
+          const artifacts = await this.featureSliceManager.getArtifactBundle(
+            body.collectionPath,
+            slugify(body.featureName),
+          );
+          writeJson(
+            response,
+            200,
+            this.validateSuccessEnvelopeForRoute('scaffold', { artifacts, scaffold }),
+          );
           return;
         }
         case '/engine/validate': {
-          const body = validateBody(await readJsonBody<EngineValidateRequest>(request), engineValidateRequestSchema);
-          const validation = await this.featureSliceManager.validateFeatureSlice(body.collectionPath, body.sliceId);
+          const body = validateBody(
+            await readJsonBody<EngineValidateRequest>(request),
+            engineValidateRequestSchema,
+          );
+          const validation = await this.featureSliceManager.validateFeatureSlice(
+            body.collectionPath,
+            body.sliceId,
+          );
           writeJson(response, 200, this.validateSuccessEnvelopeForRoute('validate', validation));
           return;
         }
         case '/engine/inspect-run-manifest': {
-          const body = validateBody(await readJsonBody<EngineInspectSliceRequest>(request), engineInspectSliceRequestSchema);
-          const manifest = await this.featureSliceManager.inspectRunManifest(body.collectionPath, body.sliceId);
-          const artifacts = await this.featureSliceManager.getArtifactBundle(body.collectionPath, body.sliceId);
-          writeJson(response, 200, this.validateSuccessEnvelopeForRoute('inspectRunManifest', { artifacts, manifest }));
+          const body = validateBody(
+            await readJsonBody<EngineInspectSliceRequest>(request),
+            engineInspectSliceRequestSchema,
+          );
+          const manifest = await this.featureSliceManager.inspectRunManifest(
+            body.collectionPath,
+            body.sliceId,
+          );
+          const artifacts = await this.featureSliceManager.getArtifactBundle(
+            body.collectionPath,
+            body.sliceId,
+          );
+          writeJson(
+            response,
+            200,
+            this.validateSuccessEnvelopeForRoute('inspectRunManifest', { artifacts, manifest }),
+          );
           return;
         }
         case '/engine/validate-run-manifest': {
-          const body = validateBody(await readJsonBody<EngineInspectSliceRequest>(request), engineInspectSliceRequestSchema);
-          const fullValidation = await this.featureSliceManager.validateFeatureSlice(body.collectionPath, body.sliceId);
+          const body = validateBody(
+            await readJsonBody<EngineInspectSliceRequest>(request),
+            engineInspectSliceRequestSchema,
+          );
+          const fullValidation = await this.featureSliceManager.validateFeatureSlice(
+            body.collectionPath,
+            body.sliceId,
+          );
           const validation = fullValidation.manifestValidation;
           const artifacts = fullValidation.artifacts;
-          writeJson(response, 200, this.validateSuccessEnvelopeForRoute('validateRunManifest', { artifacts, validation }));
+          writeJson(
+            response,
+            200,
+            this.validateSuccessEnvelopeForRoute('validateRunManifest', { artifacts, validation }),
+          );
           return;
         }
         case '/engine/inspect-support-graph': {
-          const body = validateBody(await readJsonBody<EngineInspectSliceRequest>(request), engineInspectSliceRequestSchema);
-          const supportGraph = await this.featureSliceManager.inspectSupportGraph(body.collectionPath, body.sliceId);
-          const artifacts = await this.featureSliceManager.getArtifactBundle(body.collectionPath, body.sliceId);
-          writeJson(response, 200, this.validateSuccessEnvelopeForRoute('inspectSupportGraph', { artifacts, supportGraph }));
+          const body = validateBody(
+            await readJsonBody<EngineInspectSliceRequest>(request),
+            engineInspectSliceRequestSchema,
+          );
+          const supportGraph = await this.featureSliceManager.inspectSupportGraph(
+            body.collectionPath,
+            body.sliceId,
+          );
+          const artifacts = await this.featureSliceManager.getArtifactBundle(
+            body.collectionPath,
+            body.sliceId,
+          );
+          writeJson(
+            response,
+            200,
+            this.validateSuccessEnvelopeForRoute('inspectSupportGraph', {
+              artifacts,
+              supportGraph,
+            }),
+          );
           return;
         }
         case '/engine/run': {
-          const body = validateBody(await readJsonBody<EngineRunRequest>(request), engineRunRequestSchema);
-          const artifacts = await this.featureSliceManager.getArtifactBundle(body.collectionPath, body.sliceId);
+          const body = validateBody(
+            await readJsonBody<EngineRunRequest>(request),
+            engineRunRequestSchema,
+          );
+          const artifacts = await this.featureSliceManager.getArtifactBundle(
+            body.collectionPath,
+            body.sliceId,
+          );
           if (body.mode === 'async') {
             const active = await this.jobStore.findActiveJob(body.collectionPath, body.sliceId);
             if (active) {
@@ -278,7 +357,11 @@ export class EngineHttpServer {
             return;
           }
           const report = await this.featureSliceManager.runFeatureSlice(body);
-          writeJson(response, 200, this.validateSuccessEnvelopeForRoute('run', { artifacts, report }));
+          writeJson(
+            response,
+            200,
+            this.validateSuccessEnvelopeForRoute('run', { artifacts, report }),
+          );
           return;
         }
         case '/engine/run-status': {
@@ -286,7 +369,10 @@ export class EngineHttpServer {
             writeJson(response, 405, { error: 'method_not_allowed' });
             return;
           }
-          const body = validateBody({ jobId: url.searchParams.get('jobId') || '' }, engineRunStatusRequestSchema);
+          const body = validateBody(
+            { jobId: url.searchParams.get('jobId') || '' },
+            engineRunStatusRequestSchema,
+          );
           const jobId = body.jobId;
           const job = await this.jobStore.getJob(jobId);
           if (!job) {
@@ -345,7 +431,10 @@ export class EngineHttpServer {
       const report = await this.featureSliceManager.runFeatureSlice(job.request);
       await this.jobStore.markJobSucceeded(jobId, report);
     } catch (error) {
-      await this.jobStore.markJobFailed(jobId, error instanceof Error ? error.message : String(error));
+      await this.jobStore.markJobFailed(
+        jobId,
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
@@ -353,8 +442,12 @@ export class EngineHttpServer {
     const contracts = await this.openApiContractManager.ingestFile(contractPath);
     const normalizedFeatureName = featureName.toLowerCase();
     return (
-      contracts.find((contract) => contract.controllerName.toLowerCase() === normalizedFeatureName) ||
-      contracts.find((contract) => contract.controllerName.toLowerCase().includes(normalizedFeatureName)) ||
+      contracts.find(
+        (contract) => contract.controllerName.toLowerCase() === normalizedFeatureName,
+      ) ||
+      contracts.find((contract) =>
+        contract.controllerName.toLowerCase().includes(normalizedFeatureName),
+      ) ||
       contracts[0]
     );
   }

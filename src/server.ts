@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { createCollectionManager } from './bruno/collection.js';
+import { createCollectionAuditManager } from './bruno/collection-audit.js';
 import {
   createFeatureSliceManager,
   DynamicDataPolicy,
@@ -174,6 +175,13 @@ const listCollectionsToolSchema: ToolSchema = {
 
 const getCollectionStatsToolSchema: ToolSchema = {
   collectionPath: z.string().min(1, 'Collection path is required'),
+};
+
+const collectionAuditToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  includeRequests: z.boolean().optional(),
+  maxFindings: z.number().int().positive().max(1000).optional(),
+  requestPathPrefix: z.string().optional(),
 };
 
 const workspaceToolSchema: ToolSchema = {
@@ -420,6 +428,7 @@ const runFeatureSliceToolSchema: ToolSchema = {
 
 export class BrunoMcpServer {
   private server: McpServer;
+  private collectionAuditManager;
   private collectionManager;
   private featureSliceManager;
   private nativeManager;
@@ -453,6 +462,7 @@ export class BrunoMcpServer {
 
     this.collectionManager = createCollectionManager();
     this.nativeManager = createBrunoNativeManager();
+    this.collectionAuditManager = createCollectionAuditManager(this.nativeManager);
     this.openApiContractManager = createOpenApiContractManager();
     this.requestBuilder = createRequestBuilder();
     this.workspaceManager = createWorkspaceManager();
@@ -477,6 +487,7 @@ export class BrunoMcpServer {
     this.setupCreateCrudRequestsTool();
     this.setupListCollectionsTool();
     this.setupGetCollectionStatsTool();
+    this.setupCollectionAuditTool();
     this.setupWorkspaceTools();
     this.setupCollectionDefaultsTools();
     this.setupFolderTools();
@@ -832,6 +843,37 @@ export class BrunoMcpServer {
           );
         } catch (error) {
           return this.errorResult(this.getErrorMessage('getting collection stats', error));
+        }
+      },
+    );
+  }
+
+  private setupCollectionAuditTool(): void {
+    this.server.registerTool(
+      'audit_collection_quality',
+      {
+        title: 'Audit Bruno Collection Quality',
+        description:
+          'Audit a Bruno collection or subpath for enterprise-grade test depth, truthiness, duplication, and request design gaps.',
+        inputSchema: collectionAuditToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            collectionPath: string;
+            includeRequests?: boolean;
+            maxFindings?: number;
+            requestPathPrefix?: string;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.collectionAuditManager.auditCollection(args.collectionPath, {
+            includeRequests: args.includeRequests,
+            maxFindings: args.maxFindings,
+            requestPathPrefix: args.requestPathPrefix,
+          });
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('auditing collection quality', error));
         }
       },
     );
@@ -1872,6 +1914,7 @@ export class BrunoMcpServer {
               'REST',
               'GraphQL over HTTP',
               'binary uploads',
+              'collection quality audit',
               'feature slice planning',
               'feature slice scaffolding',
               'strict matrices',
@@ -1936,6 +1979,31 @@ export class BrunoMcpServer {
           folders,
           requests,
         });
+      },
+    );
+
+    this.server.registerResource(
+      'bruno_collection_audit',
+      new ResourceTemplate('bruno://collection-audit/{+collectionPath}', {
+        complete: {
+          collectionPath: async (value) => this.completeCollectionPaths(String(value || '')),
+        },
+        list: undefined,
+      }),
+      {
+        description:
+          'Read-only summary of Bruno collection coverage depth, shallow tests, duplication, placeholders, and request design risks.',
+        mimeType: 'application/json',
+        title: 'Bruno Collection Audit',
+      },
+      async (uri, variables) => {
+        const collectionPath = this.getTemplateVariable(variables, 'collectionPath');
+        await this.assertPathAllowed(collectionPath, 'Collection path');
+        const audit = await this.collectionAuditManager.auditCollection(collectionPath, {
+          includeRequests: false,
+          maxFindings: 100,
+        });
+        return this.jsonResource(uri.toString(), audit);
       },
     );
 

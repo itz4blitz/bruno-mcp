@@ -69,6 +69,7 @@ export * from './bruno/types.js';
 export * from './bruno/generator.js';
 export * from './bruno/collection.js';
 export * from './bruno/environment.js';
+export * from './bruno/collection-audit.js';
 export * from './bruno/controller-contract.js';
 export * from './bruno/feature-slice.js';
 export * from './engine-http/types.js';

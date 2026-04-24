@@ -121,6 +121,7 @@ This fork is built around that philosophy.
 - `add_test_script`
 - `create_test_suite`
 - `create_crud_requests`
+- `audit_collection_quality`
 - `inspect_feature_slice_context`
 - `inspect_controller_contract`
 - `plan_feature_slice`
@@ -168,6 +169,7 @@ This fork is built around that philosophy.
 - `bruno://capabilities`
 - `bruno://workspace/{workspacePath}`
 - `bruno://collection/{collectionPath}`
+- `bruno://collection-audit/{collectionPath}`
 - `bruno://request/{requestPath}`
 - `bruno://environment/{collectionPath}/{environmentName}`
 - `bruno://slice/{collectionPath}/{sliceId}`

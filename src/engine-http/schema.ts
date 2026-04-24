@@ -34,7 +34,14 @@ export const enginePlanRequestSchema = z
     controllerContractPath: z.string().optional(),
     convenienceMode: z.boolean().optional(),
     featureName: z.string().min(1),
-    featureType: z.enum(['resource-crud', 'workflow', 'auth', 'search-filtering', 'upload', 'admin-resource']),
+    featureType: z.enum([
+      'resource-crud',
+      'workflow',
+      'auth',
+      'search-filtering',
+      'upload',
+      'admin-resource',
+    ]),
     overlay: z.string().optional(),
     sourceOfTruth: z.string().optional(),
     strictMode: z.boolean().optional(),
@@ -42,11 +49,13 @@ export const enginePlanRequestSchema = z
   })
   .strict();
 
-export const engineScaffoldRequestSchema = enginePlanRequestSchema.extend({
-  dataPolicy: dynamicDataPolicySchema.optional(),
-  includeMatrices: z.boolean().optional(),
-  includeSupportRequests: z.boolean().optional(),
-}).strict();
+export const engineScaffoldRequestSchema = enginePlanRequestSchema
+  .extend({
+    dataPolicy: dynamicDataPolicySchema.optional(),
+    includeMatrices: z.boolean().optional(),
+    includeSupportRequests: z.boolean().optional(),
+  })
+  .strict();
 
 export const engineValidateRequestSchema = z
   .object({
@@ -174,12 +183,16 @@ const featureRunIssueSchema = z
 
 const featureRunReportSchema = z
   .object({
-    cleanupOutcomes: z.array(z.object({
-      failureReason: featureRunFailureReasonSchema.optional(),
-      name: z.string().min(1),
-      outcome: z.string().min(1),
-      requestPath: z.string().min(1),
-    }).strict()),
+    cleanupOutcomes: z.array(
+      z
+        .object({
+          failureReason: featureRunFailureReasonSchema.optional(),
+          name: z.string().min(1),
+          outcome: z.string().min(1),
+          requestPath: z.string().min(1),
+        })
+        .strict(),
+    ),
     collectionDefects: z.array(featureRunIssueSchema),
     correlation: correlationSchema.optional(),
     env: z.string().min(1),
@@ -194,15 +207,76 @@ const featureRunReportSchema = z
   })
   .strict();
 
-const featureRunManifestValidationSchema = z.object({ errors: z.array(z.string()), valid: z.boolean(), warnings: z.array(z.string()) }).strict();
-const featureSliceSupportGraphSchema = z.object({ edges: z.array(z.unknown()), nodes: z.array(z.unknown()), sliceId: z.string().min(1) }).strict();
-const featureSlicePlanSchema = z.object({ basePath: z.string().min(1), collectionPath: z.string().min(1), coreRequests: z.array(z.unknown()), featureName: z.string().min(1), featureType: z.string().min(1), matrixes: z.array(z.unknown()), requiredInputs: z.array(z.string()), sliceId: z.string().min(1), supportRequests: z.array(z.unknown()) }).passthrough();
-const controllerContractSchema = z.object({ authRequired: z.boolean(), basePath: z.string().min(1), controllerName: z.string().min(1), operations: z.array(z.unknown()), source: z.record(z.string(), z.unknown()) }).passthrough();
-const featureSliceValidationResultSchema = z.object({ artifacts: artifactBundleSchema, audit: z.record(z.string(), z.unknown()), manifestValidation: featureRunManifestValidationSchema, valid: z.boolean() }).strict();
-const sliceScaffoldResultSchema = z.object({ createdFolders: z.array(z.string()), createdRequests: z.array(z.string()), dynamicData: z.record(z.string(), z.unknown()), manifestPath: z.string().min(1), runManifestPath: z.string().min(1), scenarioFiles: z.array(z.string()) }).strict();
-const runAsyncAcceptedSchema = z.object({ artifacts: artifactBundleSchema, correlation: correlationSchema.optional(), jobId: z.string().min(1), pollUrl: z.string().min(1), state: z.literal('queued') }).strict();
-const runSyncResponseDataSchema = z.object({ artifacts: artifactBundleSchema, report: featureRunReportSchema }).strict();
-const runStatusResponseDataSchema = z.object({ artifacts: artifactBundleSchema, correlation: correlationSchema.optional(), error: z.string().optional(), finishedAt: z.string().optional(), jobId: z.string().min(1), report: featureRunReportSchema.optional(), startedAt: z.string().optional(), state: z.enum(['failed', 'queued', 'running', 'succeeded']) }).strict();
+const featureRunManifestValidationSchema = z
+  .object({ errors: z.array(z.string()), valid: z.boolean(), warnings: z.array(z.string()) })
+  .strict();
+const featureSliceSupportGraphSchema = z
+  .object({ edges: z.array(z.unknown()), nodes: z.array(z.unknown()), sliceId: z.string().min(1) })
+  .strict();
+const featureSlicePlanSchema = z
+  .object({
+    basePath: z.string().min(1),
+    collectionPath: z.string().min(1),
+    coreRequests: z.array(z.unknown()),
+    featureName: z.string().min(1),
+    featureType: z.string().min(1),
+    matrixes: z.array(z.unknown()),
+    requiredInputs: z.array(z.string()),
+    sliceId: z.string().min(1),
+    supportRequests: z.array(z.unknown()),
+  })
+  .passthrough();
+const controllerContractSchema = z
+  .object({
+    authRequired: z.boolean(),
+    basePath: z.string().min(1),
+    controllerName: z.string().min(1),
+    operations: z.array(z.unknown()),
+    source: z.record(z.string(), z.unknown()),
+  })
+  .passthrough();
+const featureSliceValidationResultSchema = z
+  .object({
+    artifacts: artifactBundleSchema,
+    audit: z.record(z.string(), z.unknown()),
+    manifestValidation: featureRunManifestValidationSchema,
+    valid: z.boolean(),
+  })
+  .strict();
+const sliceScaffoldResultSchema = z
+  .object({
+    createdFolders: z.array(z.string()),
+    createdRequests: z.array(z.string()),
+    dynamicData: z.record(z.string(), z.unknown()),
+    manifestPath: z.string().min(1),
+    runManifestPath: z.string().min(1),
+    scenarioFiles: z.array(z.string()),
+  })
+  .strict();
+const runAsyncAcceptedSchema = z
+  .object({
+    artifacts: artifactBundleSchema,
+    correlation: correlationSchema.optional(),
+    jobId: z.string().min(1),
+    pollUrl: z.string().min(1),
+    state: z.literal('queued'),
+  })
+  .strict();
+const runSyncResponseDataSchema = z
+  .object({ artifacts: artifactBundleSchema, report: featureRunReportSchema })
+  .strict();
+const runStatusResponseDataSchema = z
+  .object({
+    artifacts: artifactBundleSchema,
+    correlation: correlationSchema.optional(),
+    error: z.string().optional(),
+    finishedAt: z.string().optional(),
+    jobId: z.string().min(1),
+    report: featureRunReportSchema.optional(),
+    startedAt: z.string().optional(),
+    state: z.enum(['failed', 'queued', 'running', 'succeeded']),
+  })
+  .strict();
 
 export function engineEnvelopeSchema<T extends z.ZodTypeAny>(dataSchema: T) {
   return z.object({
@@ -212,8 +286,6 @@ export function engineEnvelopeSchema<T extends z.ZodTypeAny>(dataSchema: T) {
     schemaVersion: z.literal(ENGINE_HTTP_SCHEMA_VERSION),
   });
 }
-
-const passthroughObject = z.record(z.string(), z.unknown());
 
 export const ENGINE_HTTP_SCHEMA_REGISTRY = {
   health: {
@@ -227,28 +299,36 @@ export const ENGINE_HTTP_SCHEMA_REGISTRY = {
     method: 'POST',
     path: '/engine/inspect-contract',
     request: engineInspectContractRequestSchema,
-    responseData: z.object({ contractPath: z.string().min(1), controllers: z.array(controllerContractSchema) }).strict(),
+    responseData: z
+      .object({ contractPath: z.string().min(1), controllers: z.array(controllerContractSchema) })
+      .strict(),
   },
   inspectRunManifest: {
     authRequired: true,
     method: 'POST',
     path: '/engine/inspect-run-manifest',
     request: engineInspectSliceRequestSchema,
-    responseData: z.object({ artifacts: artifactBundleSchema, manifest: z.record(z.string(), z.unknown()) }).strict(),
+    responseData: z
+      .object({ artifacts: artifactBundleSchema, manifest: z.record(z.string(), z.unknown()) })
+      .strict(),
   },
   inspectSupportGraph: {
     authRequired: true,
     method: 'POST',
     path: '/engine/inspect-support-graph',
     request: engineInspectSliceRequestSchema,
-    responseData: z.object({ artifacts: artifactBundleSchema, supportGraph: featureSliceSupportGraphSchema }).strict(),
+    responseData: z
+      .object({ artifacts: artifactBundleSchema, supportGraph: featureSliceSupportGraphSchema })
+      .strict(),
   },
   plan: {
     authRequired: true,
     method: 'POST',
     path: '/engine/plan',
     request: enginePlanRequestSchema,
-    responseData: z.object({ artifacts: artifactBundleSchema, plan: featureSlicePlanSchema }).strict(),
+    responseData: z
+      .object({ artifacts: artifactBundleSchema, plan: featureSlicePlanSchema })
+      .strict(),
   },
   run: {
     authRequired: true,
@@ -269,7 +349,9 @@ export const ENGINE_HTTP_SCHEMA_REGISTRY = {
     method: 'POST',
     path: '/engine/scaffold',
     request: engineScaffoldRequestSchema,
-    responseData: z.object({ artifacts: artifactBundleSchema, scaffold: sliceScaffoldResultSchema }).strict(),
+    responseData: z
+      .object({ artifacts: artifactBundleSchema, scaffold: sliceScaffoldResultSchema })
+      .strict(),
   },
   validate: {
     authRequired: true,
@@ -283,7 +365,9 @@ export const ENGINE_HTTP_SCHEMA_REGISTRY = {
     method: 'POST',
     path: '/engine/validate-run-manifest',
     request: engineInspectSliceRequestSchema,
-    responseData: z.object({ artifacts: artifactBundleSchema, validation: featureRunManifestValidationSchema }).strict(),
+    responseData: z
+      .object({ artifacts: artifactBundleSchema, validation: featureRunManifestValidationSchema })
+      .strict(),
   },
   version: {
     authRequired: false,
@@ -316,7 +400,10 @@ export function getEngineHttpJsonSchemas() {
           path: route.path,
           request: route.request ? zodToJsonSchema(route.request, `${name}Request`) : null,
           responseData: zodToJsonSchema(route.responseData, `${name}ResponseData`),
-          successEnvelope: zodToJsonSchema(engineEnvelopeSchema(route.responseData), `${name}SuccessEnvelope`),
+          successEnvelope: zodToJsonSchema(
+            engineEnvelopeSchema(route.responseData),
+            `${name}SuccessEnvelope`,
+          ),
         },
       ];
     }),
