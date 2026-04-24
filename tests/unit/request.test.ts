@@ -73,8 +73,10 @@ test('addTestScript and updateRequest preserve existing supported sections', asy
   assert.match(content, /body:json/);
   assert.match(content, /tests \{/);
   assert.match(content, /expect\(res.status\)\.to.equal\(200\)/);
+  assert.match(content, /Accept: application\/json/);
   assert.match(content, /X-Auth-Token: \{\{authToken\}\}/);
   assert.match(content, /X-Tenant-Id: \{\{tenantId\}\}/);
+  assert.doesNotMatch(content, /Accept: 'application\/json'/);
   assert.doesNotMatch(content, /X-Auth-Token: '\{\{authToken\}\}'/);
   assert.doesNotMatch(content, /X-Tenant-Id: '\{\{tenantId\}\}'/);
 

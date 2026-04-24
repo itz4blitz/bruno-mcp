@@ -440,7 +440,7 @@ function normalizeBruTemplateScalars(content: string, format: BrunoFileFormat): 
     return content;
   }
 
-  return content.replace(/(:\s*)'((?:\{\{[^'\n]+\}\})+)'/g, '$1$2');
+  return content.replace(/(:\s*)'([A-Za-z0-9_./:{}-]+)'/g, '$1$2');
 }
 
 function detectFileFormat(filePath: string): BrunoFileFormat {

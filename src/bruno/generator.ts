@@ -438,6 +438,10 @@ export class BruGenerator {
       return value.trim();
     }
 
+    if (this.isBareScalar(value)) {
+      return value.trim();
+    }
+
     // BRU uses single quotes for strings
     if (value.includes("'") || value.includes('\n') || value.includes('\r')) {
       // Use multiline string format for complex strings
@@ -448,6 +452,10 @@ export class BruGenerator {
 
   private isTemplateScalar(value: string): boolean {
     return /^(?:\{\{[^{}\n]+\}\})+$/.test(value.trim());
+  }
+
+  private isBareScalar(value: string): boolean {
+    return /^[A-Za-z0-9_./:{}-]+$/.test(value.trim());
   }
 
   /**
