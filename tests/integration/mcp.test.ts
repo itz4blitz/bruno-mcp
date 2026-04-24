@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+
 import { callToolText, createMcpTestClient } from '../helpers/mcp-client.js';
 
 test('MCP server exposes working Bruno collection tools over stdio', async (t) => {
@@ -238,4 +240,121 @@ test("response is not an HTML error page", function () {
     'utf8',
   );
   assert.match(suiteSourceFile, /bru.setVar\('widgetId', res.getBody\(\)\?\.id\);/);
+});
+
+test('MCP server supports task-based audit execution and cancellation', async (t) => {
+  const rootPath = await mkdtemp(join(tmpdir(), 'bruno-mcp-tasks-'));
+  const session = await createMcpTestClient();
+  t.after(async () => {
+    await session.close();
+  });
+
+  await callToolText(session.client, 'create_collection', {
+    name: 'task-audit-api',
+    outputPath: rootPath,
+  });
+
+  const collectionPath = join(rootPath, 'task-audit-api');
+
+  await callToolText(session.client, 'create_request', {
+    collectionPath,
+    name: 'Get Widgets',
+    method: 'GET',
+    url: '{{baseUrl}}/widgets/{{id}}',
+  });
+
+  const tools = await session.client.listTools();
+  const auditTool = tools.tools.find((tool) => tool.name === 'audit_collection_quality');
+  assert.equal(auditTool?.execution?.taskSupport, 'optional');
+
+  assert.ok(tools.nextCursor);
+  const secondToolPage = await session.client.listTools({ cursor: tools.nextCursor });
+  assert.ok(secondToolPage.tools.length > 0);
+  assert.notDeepEqual(
+    tools.tools.map((tool) => tool.name),
+    secondToolPage.tools.map((tool) => tool.name),
+  );
+
+  const serverCapabilities = session.client.getServerCapabilities();
+  assert.ok(serverCapabilities?.tasks?.list);
+  assert.ok(serverCapabilities?.tasks?.cancel);
+  assert.ok(serverCapabilities?.tasks?.requests?.tools?.call);
+  assert.match(
+    session.client.getInstructions() || '',
+    /truthful, deep, reusable Bruno collections/i,
+  );
+
+  const auditStream = session.client.experimental.tasks.callToolStream(
+    {
+      arguments: {
+        collectionPath,
+        includeRequests: false,
+      },
+      name: 'audit_collection_quality',
+    },
+    CallToolResultSchema,
+    {
+      task: { ttl: 60000 },
+    },
+  );
+
+  const createdMessage = await auditStream.next();
+  assert.equal(createdMessage.value?.type, 'taskCreated');
+  const taskId = createdMessage.value?.task.taskId;
+  assert.ok(taskId);
+
+  const listedTasks = await session.client.experimental.tasks.listTasks();
+  assert.ok(listedTasks.tasks.some((task) => task.taskId === taskId));
+
+  const taskState = await session.client.experimental.tasks.getTask(taskId);
+  assert.equal(taskState.taskId, taskId);
+  assert.ok(['working', 'completed'].includes(taskState.status));
+
+  let resultMessage:
+    | { result: { content: Array<{ text?: string; type: string }> }; type: 'result' }
+    | undefined;
+  for await (const message of auditStream) {
+    if (message.type === 'result') {
+      resultMessage = message;
+      break;
+    }
+  }
+
+  assert.ok(resultMessage);
+  assert.match(resultMessage?.result.content[0]?.text || '', /enterpriseReadinessScore/);
+
+  const completedResult = await session.client.experimental.tasks.getTaskResult(
+    taskId,
+    CallToolResultSchema,
+  );
+  const completedContent = completedResult.content[0];
+  assert.equal(completedContent?.type, 'text');
+  assert.match(completedContent?.type === 'text' ? completedContent.text : '', /totalRequests/);
+
+  const cancellableStream = session.client.experimental.tasks.callToolStream(
+    {
+      arguments: {
+        collectionPath,
+        includeRequests: true,
+      },
+      name: 'audit_collection_quality',
+    },
+    CallToolResultSchema,
+    {
+      task: { ttl: 60000 },
+    },
+  );
+
+  const cancellableCreated = await cancellableStream.next();
+  assert.equal(cancellableCreated.value?.type, 'taskCreated');
+  const cancellableTaskId = cancellableCreated.value?.task.taskId;
+  assert.ok(cancellableTaskId);
+
+  const cancelledTask = await session.client.experimental.tasks.cancelTask(cancellableTaskId);
+  assert.equal(cancelledTask.status, 'cancelled');
+
+  const cancelledState = await session.client.experimental.tasks.getTask(cancellableTaskId);
+  assert.equal(cancelledState.status, 'cancelled');
+
+  await cancellableStream.return(undefined);
 });

@@ -6,6 +6,30 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { completable } from '@modelcontextprotocol/sdk/server/completable.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { InMemoryTaskStore } from '@modelcontextprotocol/sdk/experimental/tasks';
+import type {
+  CreateTaskRequestHandlerExtra,
+  ToolTaskHandler,
+  TaskRequestHandlerExtra,
+} from '@modelcontextprotocol/sdk/experimental/tasks/interfaces';
+import {
+  getObjectShape,
+  getSchemaDescription,
+  isSchemaOptional,
+  normalizeObjectSchema,
+  type AnyObjectSchema,
+  type AnySchema,
+} from '@modelcontextprotocol/sdk/server/zod-compat.js';
+import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import {
+  ErrorCode,
+  ListPromptsRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  McpError,
+} from '@modelcontextprotocol/sdk/types';
 import { promises as fs } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,10 +42,8 @@ import {
   DynamicDataPolicy,
   FEATURE_SLICE_OVERLAY_VALUES,
   FEATURE_SLICE_TYPE_VALUES,
-  FeatureRunProfile,
   FeatureSliceType,
   MatrixScenarioDelta,
-  RunFeatureSliceInput,
   SliceFinding,
   SupportRequestRole,
 } from './bruno/feature-slice.js';
@@ -41,6 +63,8 @@ import {
 } from './bruno/types.js';
 
 type ToolSchema = Record<string, z.ZodTypeAny>;
+const MCP_LIST_PAGE_SIZE = 10;
+const EMPTY_OBJECT_JSON_SCHEMA = { type: 'object' } as const;
 
 const METHOD_VALUES = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 const AUTH_VALUES = ['none', 'inherit', 'bearer', 'basic', 'oauth2', 'api-key', 'digest'] as const;
@@ -435,15 +459,20 @@ export class BrunoMcpServer {
   private openApiContractManager;
   private requestBuilder;
   private workspaceManager;
+  private taskStore: InMemoryTaskStore;
   private rootCache?: { paths: string[]; timestamp: number };
 
   constructor() {
+    this.taskStore = new InMemoryTaskStore();
     this.server = new McpServer(
       {
         name: 'bruno-mcp',
         version: '1.0.0',
       },
       {
+        instructions:
+          'Use Bruno MCP to build truthful, deep, reusable Bruno collections. Prefer explicit findings over weakened assertions, preserve cleanup truth, and use collection/folder defaults where reuse is real.',
+        taskStore: this.taskStore,
         capabilities: {
           completions: {},
           logging: {},
@@ -452,6 +481,15 @@ export class BrunoMcpServer {
           },
           resources: {
             listChanged: true,
+          },
+          tasks: {
+            cancel: {},
+            list: {},
+            requests: {
+              tools: {
+                call: {},
+              },
+            },
           },
           tools: {
             listChanged: true,
@@ -496,6 +534,7 @@ export class BrunoMcpServer {
     this.setupFeatureSliceTools();
     this.setupResources();
     this.setupPrompts();
+    this.setupPaginatedProtocolLists();
   }
 
   /**
@@ -849,33 +888,33 @@ export class BrunoMcpServer {
   }
 
   private setupCollectionAuditTool(): void {
-    this.server.registerTool(
+    const auditTaskHandler: ToolTaskHandler<typeof collectionAuditToolSchema> = {
+      createTask: async (args, extra) => {
+        return this.createJsonToolTask(extra, async () => {
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          return this.collectionAuditManager.auditCollection(args.collectionPath, {
+            includeRequests: args.includeRequests,
+            maxFindings: args.maxFindings,
+            requestPathPrefix: args.requestPathPrefix,
+          });
+        });
+      },
+      getTask: async (_args, extra) => this.getTaskState(extra),
+      getTaskResult: async (_args, extra) => this.getTaskResult(extra),
+    };
+
+    this.server.experimental.tasks.registerToolTask(
       'audit_collection_quality',
       {
         title: 'Audit Bruno Collection Quality',
         description:
           'Audit a Bruno collection or subpath for enterprise-grade test depth, truthiness, duplication, and request design gaps.',
         inputSchema: collectionAuditToolSchema,
+        execution: {
+          taskSupport: 'optional',
+        },
       },
-      async (rawArgs) => {
-        try {
-          const args = rawArgs as {
-            collectionPath: string;
-            includeRequests?: boolean;
-            maxFindings?: number;
-            requestPathPrefix?: string;
-          };
-          await this.assertPathAllowed(args.collectionPath, 'Collection path');
-          const result = await this.collectionAuditManager.auditCollection(args.collectionPath, {
-            includeRequests: args.includeRequests,
-            maxFindings: args.maxFindings,
-            requestPathPrefix: args.requestPathPrefix,
-          });
-          return this.jsonResult(result);
-        } catch (error) {
-          return this.errorResult(this.getErrorMessage('auditing collection quality', error));
-        }
-      },
+      auditTaskHandler,
     );
   }
 
@@ -1517,6 +1556,22 @@ export class BrunoMcpServer {
   }
 
   private setupFeatureSliceTools(): void {
+    const runFeatureSliceTaskHandler: ToolTaskHandler<typeof runFeatureSliceToolSchema> = {
+      createTask: async (args, extra) => {
+        return this.createJsonToolTask(extra, async () => {
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          if (args.workspacePath) {
+            await this.assertPathAllowed(args.workspacePath, 'Workspace path');
+          }
+          return this.featureSliceManager.runFeatureSlice(
+            args as Parameters<typeof this.featureSliceManager.runFeatureSlice>[0],
+          );
+        });
+      },
+      getTask: async (_args, extra) => this.getTaskState(extra),
+      getTaskResult: async (_args, extra) => this.getTaskResult(extra),
+    };
+
     this.server.registerTool(
       'inspect_controller_contract',
       {
@@ -1873,28 +1928,111 @@ export class BrunoMcpServer {
       },
     );
 
-    this.server.registerTool(
+    this.server.experimental.tasks.registerToolTask(
       'run_feature_slice',
       {
         title: 'Run Feature Slice',
         description:
           'Run a feature slice end to end using its generated manifest and aggregate setup, collection, product, and cleanup results truthfully.',
         inputSchema: runFeatureSliceToolSchema,
+        execution: {
+          taskSupport: 'optional',
+        },
       },
-      async (rawArgs) => {
-        try {
-          const args = rawArgs as RunFeatureSliceInput & { profile?: FeatureRunProfile };
-          await this.assertPathAllowed(args.collectionPath, 'Collection path');
-          if (args.workspacePath) {
-            await this.assertPathAllowed(args.workspacePath, 'Workspace path');
-          }
-          const result = await this.featureSliceManager.runFeatureSlice(args);
-          return this.jsonResult(result);
-        } catch (error) {
-          return this.errorResult(this.getErrorMessage('running feature slice', error));
-        }
-      },
+      runFeatureSliceTaskHandler,
     );
+  }
+
+  private async createJsonToolTask(
+    extra: CreateTaskRequestHandlerExtra,
+    work: () => Promise<unknown>,
+  ) {
+    if (!extra.taskStore) {
+      throw new Error('Task store is not configured');
+    }
+
+    const task = await extra.taskStore.createTask({
+      pollInterval: 250,
+      ttl: extra.taskRequestedTtl ?? 300000,
+    });
+
+    void (async () => {
+      try {
+        if (extra.taskRequestedTtl !== undefined) {
+          await new Promise((delayResolve) => setTimeout(delayResolve, 75));
+        }
+
+        if (await this.isTaskCancelled(task.taskId)) {
+          return;
+        }
+
+        const result = await work();
+
+        if (await this.isTaskCancelled(task.taskId)) {
+          return;
+        }
+
+        await extra.taskStore?.storeTaskResult(task.taskId, 'completed', this.jsonResult(result));
+        await this.sendTaskStatusNotification(task.taskId, extra.sendNotification);
+      } catch (error) {
+        if (await this.isTaskCancelled(task.taskId)) {
+          return;
+        }
+
+        await extra.taskStore?.storeTaskResult(
+          task.taskId,
+          'failed',
+          this.errorResult(this.getErrorMessage('running task', error)),
+        );
+        await this.sendTaskStatusNotification(task.taskId, extra.sendNotification);
+      }
+    })();
+
+    return { task };
+  }
+
+  private async getTaskState(extra: {
+    taskId?: string;
+    taskStore?: TaskRequestHandlerExtra['taskStore'];
+  }) {
+    if (!extra.taskStore || !extra.taskId) {
+      throw new Error('Task state is unavailable');
+    }
+
+    return extra.taskStore.getTask(extra.taskId);
+  }
+
+  private async getTaskResult(extra: {
+    taskId?: string;
+    taskStore?: TaskRequestHandlerExtra['taskStore'];
+  }): Promise<CallToolResult> {
+    if (!extra.taskStore || !extra.taskId) {
+      throw new Error('Task result is unavailable');
+    }
+
+    return (await extra.taskStore.getTaskResult(extra.taskId)) as CallToolResult;
+  }
+
+  private async isTaskCancelled(taskId: string): Promise<boolean> {
+    const task = await this.taskStore.getTask(taskId);
+    return task?.status === 'cancelled';
+  }
+
+  private async sendTaskStatusNotification(
+    taskId: string,
+    sendNotification: (notification: never) => Promise<void>,
+  ): Promise<void> {
+    const task = await this.taskStore.getTask(taskId);
+    if (!task) {
+      return;
+    }
+
+    await sendNotification({
+      method: 'notifications/tasks/status',
+      params: {
+        ...task,
+      },
+    } as never);
   }
 
   private setupResources(): void {
@@ -1927,8 +2065,9 @@ export class BrunoMcpServer {
               'environments',
               'slice findings',
               'cleanup truth',
+              'server instructions',
             ],
-            protocols: ['tools', 'resources', 'prompts', 'prompt completions'],
+            protocols: ['tools', 'resources', 'prompts', 'prompt completions', 'tasks'],
           },
         }),
     );
@@ -2330,6 +2469,122 @@ Prefer:
         ],
       }),
     );
+  }
+
+  private setupPaginatedProtocolLists(): void {
+    const serverInternal = this.server as unknown as {
+      _registeredPrompts: Record<string, Record<string, unknown>>;
+      _registeredResources: Record<string, Record<string, unknown>>;
+      _registeredResourceTemplates: Record<string, Record<string, unknown>>;
+      _registeredTools: Record<string, Record<string, unknown>>;
+    };
+
+    this.server.server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+      const tools = Object.entries(serverInternal._registeredTools)
+        .filter(([, tool]) => tool.enabled)
+        .map(([name, tool]) => {
+          const inputSchema = normalizeObjectSchema(tool.inputSchema as AnySchema | undefined);
+          const outputSchema = normalizeObjectSchema(tool.outputSchema as AnySchema | undefined);
+
+          return {
+            _meta: tool._meta,
+            annotations: tool.annotations,
+            description: tool.description,
+            execution: tool.execution,
+            inputSchema: inputSchema
+              ? toJsonSchemaCompat(inputSchema, {
+                  pipeStrategy: 'input',
+                  strictUnions: true,
+                })
+              : EMPTY_OBJECT_JSON_SCHEMA,
+            name,
+            outputSchema: outputSchema
+              ? toJsonSchemaCompat(outputSchema, {
+                  pipeStrategy: 'output',
+                  strictUnions: true,
+                })
+              : undefined,
+            title: tool.title,
+          };
+        });
+
+      return this.paginateListResult('tools', tools, request.params?.cursor);
+    });
+
+    this.server.server.setRequestHandler(ListResourcesRequestSchema, async (request, extra) => {
+      const staticResources = Object.entries(serverInternal._registeredResources)
+        .filter(([, resource]) => resource.enabled)
+        .map(([uri, resource]) => ({
+          uri,
+          name: resource.name,
+          ...(resource.metadata as Record<string, unknown> | undefined),
+        }));
+
+      const templateResources: Array<Record<string, unknown>> = [];
+      for (const template of Object.values(serverInternal._registeredResourceTemplates)) {
+        if (!template.enabled) {
+          continue;
+        }
+
+        const resourceTemplate = template.resourceTemplate as {
+          listCallback?: (extra: unknown) => Promise<{ resources: Record<string, unknown>[] }>;
+        };
+        if (!resourceTemplate.listCallback) {
+          continue;
+        }
+
+        const result = await resourceTemplate.listCallback(extra);
+        for (const resource of result.resources) {
+          templateResources.push({
+            ...(template.metadata as Record<string, unknown> | undefined),
+            ...resource,
+          });
+        }
+      }
+
+      return this.paginateListResult(
+        'resources',
+        [...staticResources, ...templateResources],
+        request.params?.cursor,
+      );
+    });
+
+    this.server.server.setRequestHandler(ListResourceTemplatesRequestSchema, async (request) => {
+      const resourceTemplates = Object.entries(serverInternal._registeredResourceTemplates)
+        .filter(([, template]) => template.enabled)
+        .map(([name, template]) => ({
+          name,
+          uriTemplate: String(
+            (
+              template.resourceTemplate as {
+                uriTemplate?: { toString(): string };
+              }
+            ).uriTemplate?.toString() || '',
+          ),
+          ...(template.metadata as Record<string, unknown> | undefined),
+        }));
+
+      return this.paginateListResult(
+        'resourceTemplates',
+        resourceTemplates,
+        request.params?.cursor,
+      );
+    });
+
+    this.server.server.setRequestHandler(ListPromptsRequestSchema, async (request) => {
+      const prompts = Object.entries(serverInternal._registeredPrompts)
+        .filter(([, prompt]) => prompt.enabled)
+        .map(([name, prompt]) => ({
+          arguments: this.promptArgumentsFromSchema(
+            prompt.argsSchema as AnyObjectSchema | undefined,
+          ),
+          description: prompt.description,
+          name,
+          title: prompt.title,
+        }));
+
+      return this.paginateListResult('prompts', prompts, request.params?.cursor);
+    });
   }
 
   /**
@@ -2923,6 +3178,62 @@ Prefer:
 
   private getErrorMessage(action: string, error: unknown): string {
     return error instanceof Error ? `Error ${action}: ${error.message}` : `Unknown error ${action}`;
+  }
+
+  private promptArgumentsFromSchema(schema: AnyObjectSchema | undefined) {
+    const shape = getObjectShape(schema);
+    if (!shape) {
+      return undefined;
+    }
+
+    return Object.entries(shape).map(([name, field]) => ({
+      description: getSchemaDescription(field),
+      name,
+      required: !isSchemaOptional(field),
+    }));
+  }
+
+  private paginateListResult<T extends Record<string, unknown>>(
+    key: 'prompts' | 'resourceTemplates' | 'resources' | 'tools',
+    items: T[],
+    cursor?: string,
+  ) {
+    const startIndex = this.decodeCursor(cursor);
+    const pageItems = items.slice(startIndex, startIndex + MCP_LIST_PAGE_SIZE);
+    const nextCursor =
+      startIndex + MCP_LIST_PAGE_SIZE < items.length
+        ? this.encodeCursor(startIndex + MCP_LIST_PAGE_SIZE)
+        : undefined;
+
+    return {
+      [key]: pageItems,
+      nextCursor,
+    };
+  }
+
+  private encodeCursor(offset: number): string {
+    return Buffer.from(JSON.stringify({ offset }), 'utf8').toString('base64url');
+  }
+
+  private decodeCursor(cursor?: string): number {
+    if (!cursor) {
+      return 0;
+    }
+
+    try {
+      const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
+        offset?: unknown;
+      };
+      if (!Number.isInteger(decoded.offset) || Number(decoded.offset) < 0) {
+        throw new Error('offset must be a non-negative integer');
+      }
+      return Number(decoded.offset);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Invalid pagination cursor: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }
 

@@ -14,7 +14,7 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
     await session.close();
   });
 
-  const tools = await session.client.listTools();
+  const tools = await listAllTools(session.client);
   assert.ok(tools.tools.some((tool) => tool.name === 'inspect_controller_contract'));
   assert.ok(tools.tools.some((tool) => tool.name === 'plan_feature_slice'));
   assert.ok(tools.tools.some((tool) => tool.name === 'scaffold_feature_slice'));
@@ -27,7 +27,14 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
   assert.match(collectionText, /Created Bruno collection/);
 
   const collectionPath = join(rootPath, 'feature-api');
-  const branchContractPath = join(process.cwd(), 'tests', 'fixtures', 'contracts', 'branch', 'openapi.json');
+  const branchContractPath = join(
+    process.cwd(),
+    'tests',
+    'fixtures',
+    'contracts',
+    'branch',
+    'openapi.json',
+  );
   const server = await createTestServer();
   t.after(async () => {
     await server.close();
@@ -48,7 +55,9 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
       contractPath: branchContractPath,
     }),
   ) as { controllers: Array<{ controllerName: string; operations: unknown[] }> };
-  assert.ok(branchContracts.controllers.some((controller) => controller.controllerName === 'Branch'));
+  assert.ok(
+    branchContracts.controllers.some((controller) => controller.controllerName === 'Branch'),
+  );
 
   const plan = JSON.parse(
     await callToolText(session.client, 'plan_feature_slice', {
@@ -104,9 +113,10 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
   assert.ok(scaffold.createdRequests.length >= 9);
   assert.equal(scaffold.scenarioFiles.length, 2);
 
-  const matrixMetadata = JSON.parse(
-    await readFile(plan.matrixes[0]!.metadataFilePath, 'utf8'),
-  ) as { scenarioFilePath: string; strategy: string };
+  const matrixMetadata = JSON.parse(await readFile(plan.matrixes[0]!.metadataFilePath, 'utf8')) as {
+    scenarioFilePath: string;
+    strategy: string;
+  };
   assert.equal(matrixMetadata.strategy, 'base-valid-payload-plus-deltas');
   assert.match(matrixMetadata.scenarioFilePath, /scenarios\/create-user-validation-matrix\.json/);
 
@@ -197,7 +207,11 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
   const text = resource.contents.find((entry) => 'text' in entry && typeof entry.text === 'string');
   assert.ok(text && 'text' in text);
   const sliceState = JSON.parse(String(text.text)) as {
-    manifest: { overlayDetails: { id: string }; sliceId: string; supportGraph?: { nodes: unknown[] } };
+    manifest: {
+      overlayDetails: { id: string };
+      sliceId: string;
+      supportGraph?: { nodes: unknown[] };
+    };
     runManifestValidation: { valid: boolean } | null;
   };
   assert.equal(sliceState.manifest.sliceId, 'users');
@@ -224,7 +238,8 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
           title: 'Delete endpoint returns 500 for valid owned fixture',
           observedBehavior: 'DELETE /users/:id returned 500',
           expectedBehavior: 'DELETE should return 204',
-          recommendedAction: 'Fix product delete flow and keep cleanup request truthful until then.',
+          recommendedAction:
+            'Fix product delete flow and keep cleanup request truthful until then.',
         },
       ],
     }),
@@ -232,3 +247,18 @@ test('MCP server exposes feature-slice tools and slice resource', async (t) => {
   const findingsFile = await readFile(findings.findingsPath, 'utf8');
   assert.match(findingsFile, /product-defect/);
 });
+
+async function listAllTools(
+  client: Awaited<ReturnType<typeof createMcpTestClient>>['client'],
+): Promise<{ tools: Array<{ name: string }> }> {
+  const tools: Array<{ name: string }> = [];
+  let cursor: string | undefined;
+
+  do {
+    const page = await client.listTools(cursor ? { cursor } : undefined);
+    tools.push(...page.tools);
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  return { tools };
+}

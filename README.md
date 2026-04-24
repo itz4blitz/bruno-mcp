@@ -82,10 +82,10 @@ This fork is built around that philosophy.
 | MCP resources                                                             | Implemented                    |
 | MCP prompts                                                               | Implemented                    |
 | MCP completions                                                           | Implemented                    |
+| Tasks                                                                     | Implemented                    |
 | Roots enforcement                                                         | Implemented                    |
 | Logging / progress                                                        | Implemented                    |
 | Elicitation                                                               | Implemented                    |
-| Tasks                                                                     | Not implemented                |
 | Sampling                                                                  | Not implemented                |
 | gRPC generation                                                           | Not implemented                |
 | WebSocket generation                                                      | Not implemented                |
