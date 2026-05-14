@@ -8,6 +8,8 @@
 
 `bruno-mcp` is a workspace-native MCP server for creating, inspecting, and managing Bruno collections on disk.
 
+The intended workflow is simple: an AI agent uses this MCP to generate, audit, and maintain Bruno collections, and then those same collections open and run in Bruno Desktop or `bru run` without a separate conversion step.
+
 It does not try to remote-control the Bruno desktop app. Instead, it works with the same files that Bruno desktop and Bruno CLI already read:
 
 - classic Bruno collections
@@ -27,12 +29,13 @@ Bruno is file-based. That is a feature.
 When an MCP server respects Bruno’s native model, you get:
 
 - collections that open correctly in Bruno desktop
+- AI-generated suites that are still normal Bruno collections
 - collections that run correctly through `bru run`
 - workspace-level management without brittle desktop automation
 - reusable defaults at collection and folder scope instead of copy/pasted request logic
 - a safer path to AI-generated API coverage because the model writes to real Bruno structures
 
-This fork is built around that philosophy.
+This project is an independent file-native Bruno automation implementation built around that philosophy.
 
 ## What It Does
 
@@ -64,6 +67,7 @@ This fork is built around that philosophy.
 - tools for deterministic mutation
 - feature-slice planning, scaffolding, auditing, and findings capture
 - OpenAPI contract inspection, OData modeling, and coverage-denominator manifests
+- collection quality/readiness scoring for assertion depth, docs depth, semantic risk, parity risk, product defects, seed gaps, test-infra gaps, and external stubs
 - strict matrix scaffolding with request-owned base payloads and scenario-delta files
 - explicit support request scaffolding with visible auth/seed/resolve/lookup/cleanup helpers
 - project overlay support for product-specific raw/DTO overlay behavior
@@ -77,31 +81,43 @@ This fork is built around that philosophy.
 
 ## Status
 
-| Area                                                                      | Status                         |
-| ------------------------------------------------------------------------- | ------------------------------ |
-| Classic `.bru` collections                                                | Implemented                    |
-| Workspace / OpenCollection YAML                                           | Implemented                    |
-| Request metadata parity (assertions, tags, settings, docs, vars, scripts) | Implemented                    |
-| Workspace / collection / folder / request / env CRUD                      | Implemented                    |
-| Desktop-ready environment file hydration                                  | Implemented                    |
-| OpenAPI/OData contract inspection and coverage manifests                  | Implemented foundation         |
-| REST/OData contract-suite scaffolding                                     | Implemented                    |
-| Collection run command execution                                          | Implemented                    |
-| Variable source graph audit                                               | Implemented foundation         |
-| MCP tools                                                                 | Implemented                    |
-| MCP resources                                                             | Implemented                    |
-| MCP prompts                                                               | Implemented                    |
-| MCP completions                                                           | Implemented                    |
-| Tasks                                                                     | Implemented                    |
-| Roots enforcement                                                         | Implemented                    |
-| Logging / progress                                                        | Implemented                    |
-| Elicitation                                                               | Implemented                    |
-| Sampling                                                                  | Not implemented                |
-| GraphQL schema introspection coverage                                     | Not implemented                |
-| gRPC generation                                                           | Not implemented                |
-| WebSocket generation                                                      | Not implemented                |
-| SOAP/WSDL generation                                                      | Not implemented                |
-| Desktop active-environment persistence                                    | Not implemented / not verified |
+Statuses describe the generic MCP surface. Product-specific oracles still belong in the consuming API project or its overlay.
+
+| Area                                                                      | Status                                   |
+| ------------------------------------------------------------------------- | ---------------------------------------- |
+| Classic `.bru` collections                                                | Implemented                              |
+| Workspace / OpenCollection YAML                                           | Implemented                              |
+| Request metadata parity (assertions, tags, settings, docs, vars, scripts) | Implemented                              |
+| Workspace / collection / folder / request / env CRUD                      | Implemented                              |
+| Desktop-ready environment file hydration                                  | Implemented                              |
+| OpenAPI contract inspection and coverage manifests                        | Implemented                              |
+| OData-over-OpenAPI entity/query/key modeling                              | Implemented for REST/OData               |
+| REST/OData contract-suite scaffolding                                     | Implemented                              |
+| Collection quality/readiness scoring                                      | Implemented                              |
+| Collection run command execution                                          | Implemented                              |
+| Variable source graph audit                                               | Implemented                              |
+| Feature slice planning, scaffolding, manifests, and run classification    | Implemented                              |
+| MCP tools                                                                 | Implemented                              |
+| MCP resources                                                             | Implemented                              |
+| MCP prompts                                                               | Implemented                              |
+| MCP completions                                                           | Implemented                              |
+| Tasks                                                                     | Implemented                              |
+| Roots enforcement                                                         | Implemented                              |
+| Logging / progress                                                        | Implemented                              |
+| Elicitation                                                               | Implemented                              |
+| Run-report ingestion into coverage manifests                              | Planned / next                           |
+| Data-file authoring and iteration manifest support                        | Planned                                  |
+| Strict assertion/operator validation                                      | Planned                                  |
+| Request settings validation                                               | Planned                                  |
+| Full Bruno auth/secrets parity                                            | Planned                                  |
+| Import/export/converter wrappers                                          | Planned                                  |
+| GraphQL-over-HTTP request generation                                      | Implemented                              |
+| GraphQL schema introspection coverage                                     | Planned                                  |
+| gRPC generation                                                           | Planned                                  |
+| WebSocket generation                                                      | Planned                                  |
+| SOAP/WSDL generation                                                      | Planned                                  |
+| Desktop active environment selection inside the Bruno app                 | Manual Desktop UI state; env files exist |
+| Sampling                                                                  | Not implemented                          |
 
 ## Supported Bruno Storage Models
 
@@ -122,6 +138,14 @@ This fork is built around that philosophy.
 - environment `*.yml`
 
 `bruno-mcp` preserves the format already present on disk instead of silently converting collections behind your back.
+
+## Bruno Desktop Compatibility
+
+Generated collections and environments are expected to open and run in Bruno Desktop. If a generated collection cannot be loaded by Bruno Desktop, or a declared environment variable is missing from the generated Bruno files, that is an MCP defect.
+
+The MCP writes real Bruno files, including collection/request `.bru` files and `environments/*.bru` environment files. `configure_desktop_environment` and `hydrate_odata_seed_environment` can also mirror stable variables into collection-level pre-request variables so common values such as `baseUrl` resolve even before a Desktop environment is selected.
+
+Runtime-only values still have to come from a run or resolver request. Bruno Desktop's selected environment dropdown is treated as Desktop app state, not collection state. The MCP does not remote-control Desktop or mutate undocumented app preferences; it creates the files Bruno Desktop can load and documents which environment to select.
 
 ## Core Capabilities
 
@@ -222,7 +246,9 @@ See `docs/ENGINE_HTTP_API.md` for the Premier-facing HTTP engine mode.
 
 - remote-control the Bruno desktop process
 - promise every possible Bruno UI-only state is modeled on disk
-- support gRPC or WebSocket generation today
+- change the selected environment inside an already-running Bruno Desktop app
+- ingest `bru run` reports back into coverage manifests yet
+- support gRPC, WebSocket, or SOAP/WSDL generation today
 - silently migrate collection formats
 - weaken assertions to match buggy APIs
 
@@ -379,13 +405,13 @@ bruno://workspace//absolute/path/to/workspace
 - legacy generator modules
   - still useful for request generation helpers and acceptance coverage
 
-### Companion skills scaffold
+### Companion Skills Scaffold
 
 The repo also contains a generic skills package scaffold:
 
 - `packages/skills`
 
-This is for reusable, project-agnostic Bruno generation and audit guidance.
+This is for reusable, project-agnostic Bruno generation and audit guidance. Core Bruno file generation, Desktop-compatible environments, variable auditing, coverage manifests, and collection-quality scoring belong in the MCP server. Skills can guide agent behavior, but they should not be the only place where correctness is enforced.
 
 Project-specific semantics belong in project-local overlays, not in this generic repo.
 
@@ -426,6 +452,9 @@ npm run verify
 
 - `docs/WORKSPACE_MODEL.md`
 - `docs/MCP_TOOL_REFERENCE.md`
+- `docs/BRUNO_DOCS_GAP_AUDIT.md`
+- `docs/FEATURE_SLICE_AUTOMATION.md`
+- `docs/ENGINE_HTTP_API.md`
 - `docs/DEVELOPMENT.md`
 - `docs/CLIENT_SETUP.md`
 - `packages/skills/README.md`
@@ -434,12 +463,17 @@ npm run verify
 
 High-value next steps that are not blockers for current use:
 
-- deeper resources and prompt workflows
-- task-backed long-running operations
-- optional sampling-based planning/auditing
+- run-report ingestion and reconciliation into coverage manifests
+- data-file authoring and iteration manifest support
+- strict assertion/operator and request-settings validation
+- full Bruno auth and secrets parity
+- import/export/converter wrappers
+- GraphQL schema introspection coverage
 - gRPC generation
 - WebSocket generation
-- verified desktop active-environment persistence if Bruno’s on-disk model is proven
+- SOAP/WSDL generation
+- optional sampling-based planning/auditing
+- automatic Desktop environment selection if Bruno documents a stable on-disk model
 
 ## License
 

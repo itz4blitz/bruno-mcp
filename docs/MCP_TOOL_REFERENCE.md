@@ -153,6 +153,7 @@ Current resources include:
 - `bruno://capabilities`
 - `bruno://workspace/{workspacePath}`
 - `bruno://collection/{collectionPath}`
+- `bruno://collection-audit/{collectionPath}`
 - `bruno://request/{requestPath}`
 - `bruno://environment/{collectionPath}/{environmentName}`
 - `bruno://slice/{collectionPath}/{sliceId}`

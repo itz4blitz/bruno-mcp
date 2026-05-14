@@ -4,6 +4,35 @@ Source checked: `https://docs.usebruno.com/llms.txt` and `https://docs.usebruno.
 
 This audit is scoped to gaps between current Bruno documentation and this MCP server's generation/audit surface. The goal is enterprise-grade Bruno generation that opens cleanly in Bruno Desktop, runs cleanly in `bru run`, and does not hide setup, seed, cleanup, or product defects.
 
+## Current Status Snapshot
+
+Implemented:
+
+- file-native collection, workspace, request, folder-default, collection-default, and environment CRUD
+- Desktop-ready environment file generation and live OData seed-variable hydration
+- OpenAPI inspection, OData-over-OpenAPI modeling, and coverage-denominator manifests
+- REST/OData contract-suite scaffolding with persisted environments, positive/negative requests, query matrices, file routes, and coverage mappings
+- Bruno variable source graph auditing for Desktop and CLI readiness
+- Bruno CLI run command generation/execution
+- feature-slice planning, scaffolding, support graphs, run manifests, run classification, and findings capture
+- collection quality/readiness scoring for assertion depth, docs depth, semantic risk, parity risk, product defects, seed gaps, test-infra gaps, and external stubs
+
+In progress / next:
+
+- ingesting JSON/JUnit/HTML `bru run` artifacts back into coverage manifests and findings
+- generic data-file authoring for CSV/JSON runner iterations
+- strict assertion/operator validation and request-settings validation
+- full Bruno auth, secrets, helper-script, and report-artifact parity
+
+Planned:
+
+- GraphQL schema/introspection coverage
+- gRPC generation
+- WebSocket generation
+- SOAP/WSDL generation
+- import/export/converter wrappers
+- optional sampling-based planning/auditing
+
 ## Fixed During This Pass
 
 - `create_request` now emits current classic BRU query syntax as `params:query { ... }`.
@@ -26,9 +55,9 @@ This audit is scoped to gaps between current Bruno documentation and this MCP se
 
 The running global MCP process must be restarted before newly added tools appear to clients.
 
-## P0 Gaps
+## Remaining High-Priority Gaps
 
-These are blockers for "100% true coverage" generation.
+These are the remaining blockers for "100% true coverage" generation across arbitrary APIs.
 
 1. Contract-driven suite generation exists for REST/OData, but still needs report reconciliation.
    The MCP can inspect OpenAPI, model OData-over-OpenAPI denominators, scaffold REST/OData positive and negative request suites, write persisted environments, audit variables, and map generated requests to a coverage manifest. It still needs `bru run` report ingestion to update coverage from actual pass/fail execution.
@@ -39,8 +68,8 @@ These are blockers for "100% true coverage" generation.
 3. Coverage needs run-report reconciliation.
    The MCP now generates a coverage denominator manifest for endpoints, methods, query options, payload fields, response fields, scenario classes, seeded variables, and file routes. Audits still need to compare Bruno collection state and `bru run` reports against that manifest and mark covered, uncovered, documented skip, and failing items.
 
-4. Seed handling needs a source-of-truth integration.
-   The MCP needs tools to ingest a seed manifest or resolve seed records through the public API, then hydrate environment/runtime variables. It should never require DB reads for API test data.
+4. Seed handling needs a stronger source-of-truth integration.
+   The MCP can resolve seed records through a public OData/OpenAPI API and hydrate environment/runtime variables. It still needs generic seed-manifest ingestion and validation so generated suites can prove which variables came from deterministic fixtures. It should never require DB reads for API test data.
 
 5. Desktop variable readiness needs generation enforcement.
    Bruno Desktop direct-request usage needs persisted environment, collection, folder, or request variables. Runtime `bru.setVar()` only exists during a collection run. The MCP now audits every `{{var}}` reference and classifies environment, collection, folder, request, process env, secret manager, prompt, OAuth2, runtime-only, and missing sources. Generators still need to fail or create support artifacts when unresolved Desktop variables remain.
@@ -48,8 +77,8 @@ These are blockers for "100% true coverage" generation.
 6. Data-driven test generation is incomplete.
    Bruno supports CSV/JSON runner data files and `bru.runner.iterationData`. The MCP has strict matrix scaffolding, but it needs a general data-file authoring and run-manifest layer that pairs each request with its data file, validates iteration fields, and emits the exact `bru run --json-file-path` or `--csv-file-path` command.
 
-7. Assertion modeling is too loose.
-   The docs define assertion expressions, operators, and values. The MCP accepts generic `{ name, value }` pairs and should validate/map the full operator set, including type, string, numeric, length, membership, and response-header assertions.
+7. Assertion modeling still needs full docs-backed validation.
+   The docs define assertion expressions, operators, and values. The MCP audits assertion depth and semantic risk, but request creation still accepts generic `{ name, value }` pairs and should validate/map the full operator set, including type, string, numeric, length, membership, and response-header assertions.
 
 8. Request settings are unvalidated.
    The MCP allows arbitrary settings. It should validate docs-backed settings: `encodeUrl`, `timeout`, `followRedirects`, and `maxRedirects` with documented ranges/defaults.
@@ -106,10 +135,10 @@ These are quality gaps that will create drift or weak tests over time.
 9. Reports need first-class artifact handling.
    The MCP should generate JSON/JUnit/HTML report paths, mask sensitive data intentionally, and ingest reports to update coverage manifests.
 
-10. Desktop active-environment persistence should not be faked.
-    Bruno stores active global environment selection internally per workspace. Unless Bruno documents a stable on-disk setting, MCP should generate files and instructions, not pretend it can select the active Desktop environment.
+10. Desktop environment file generation is implemented; Desktop dropdown selection should not be faked.
+    The MCP generates the environment files and variables that Bruno Desktop can load. Unless Bruno documents a stable on-disk setting for the active environment dropdown, the MCP should keep treating that selection as app UI state and provide clear instructions instead of pretending it can select it.
 
-## First Consumer Consequence
+## First Consumer Guidance
 
 For the first consuming API project, use `scaffold_api_contract_suite` as the generic OpenAPI/OData suite generator instead of repo-local collection generation. The generator should:
 

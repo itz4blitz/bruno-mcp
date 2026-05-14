@@ -1,12 +1,14 @@
 # Workspace Model
 
-This fork treats Bruno as a file-native workspace system.
+This project treats Bruno as a file-native workspace system.
 
 ## Principle
 
 Do not automate the Bruno desktop process.
 
 Instead, manage the same on-disk files Bruno desktop and Bruno CLI already read.
+
+The workflow this repo optimizes for is: an AI agent creates and audits Bruno assets through MCP tools, then a developer opens the same assets in Bruno Desktop or runs them with Bruno CLI. Desktop compatibility is a first-class output requirement, not a best-effort export.
 
 ## Supported Models
 
@@ -67,7 +69,7 @@ Avoid repeating the same bootstrap/auth script in every request unless you have 
 
 ## Workspace Support
 
-Workspace support in this fork currently includes:
+Workspace support in this project currently includes:
 
 - reading and validating `workspace.yml`
 - adding/removing collection references
@@ -75,6 +77,7 @@ Workspace support in this fork currently includes:
 - exposing workspace and collection state as MCP resources
 - exposing reusable generation/audit workflows as MCP prompts
 - honoring client roots when available for safer path-scoped automation
+- generating environment files that Bruno Desktop and Bruno CLI can load
 
 The workspace root remains intentionally small and explicit.
 
@@ -84,5 +87,5 @@ The workspace root remains intentionally small and explicit.
 - no gRPC generation
 - no WebSocket generation
 - mixed-format workspaces may still require deliberate refactoring for best UX
-- desktop-active environment selection persistence is not yet a documented/verified feature of this server
+- Desktop environment files are generated, but the active environment dropdown is treated as Bruno Desktop UI state unless Bruno documents a stable on-disk setting
 - server-side tasks and sampling are not first-class product features yet
