@@ -19,7 +19,14 @@ test('Engine HTTP server exposes versioned Premier-friendly endpoints', async (t
   assert.equal(collectionResult.success, true);
 
   const collectionPath = join(rootPath, 'engine-api');
-  const contractPath = join(process.cwd(), 'tests', 'fixtures', 'contracts', 'branch', 'openapi.json');
+  const contractPath = join(
+    process.cwd(),
+    'tests',
+    'fixtures',
+    'contracts',
+    'branch',
+    'openapi.json',
+  );
   const token = 'test-token';
   const server = createEngineHttpServer({ host: '127.0.0.1', port: 0, token });
   const address = await server.start();
@@ -84,7 +91,9 @@ test('Engine HTTP server exposes versioned Premier-friendly endpoints', async (t
   const inspectContract = (await inspectContractResponse.json()) as {
     data: { controllers: Array<{ controllerName: string }> };
   };
-  assert.ok(inspectContract.data.controllers.some((controller) => controller.controllerName === 'Branch'));
+  assert.ok(
+    inspectContract.data.controllers.some((controller) => controller.controllerName === 'Branch'),
+  );
 
   const planResponse = await fetch(`${baseUrl}/engine/plan`, {
     body: JSON.stringify({
@@ -120,7 +129,10 @@ test('Engine HTTP server exposes versioned Premier-friendly endpoints', async (t
   });
   assert.equal(scaffoldResponse.status, 200);
   const scaffold = (await scaffoldResponse.json()) as {
-    data: { artifacts: { runManifestPath: string; supportGraphPath: string }; scaffold: { createdRequests: string[] } };
+    data: {
+      artifacts: { runManifestPath: string; supportGraphPath: string };
+      scaffold: { createdRequests: string[] };
+    };
   };
   assert.ok(scaffold.data.scaffold.createdRequests.length > 0);
 
@@ -280,7 +292,10 @@ test('Engine HTTP run endpoint returns structured artifacts and run report', asy
   assert.equal(typeof validateManifest.data.artifacts.artifactsManifestPath, 'string');
   assert.equal(typeof validateManifest.data.artifacts.validationSummaryMarkdownPath, 'string');
 
-  const validationSummary = await readFile(validateManifest.data.artifacts.validationSummaryMarkdownPath, 'utf8');
+  const validationSummary = await readFile(
+    validateManifest.data.artifacts.validationSummaryMarkdownPath,
+    'utf8',
+  );
   assert.match(validationSummary, /# Validation Summary/);
 
   const asyncRunResponse = await fetch(`${baseUrl}/engine/run`, {
@@ -325,7 +340,9 @@ test('Engine HTTP run endpoint returns structured artifacts and run report', asy
   for (let attempt = 0; attempt < 240; attempt += 1) {
     const statusResponse = await fetch(pollUrl, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(statusResponse.status, 200);
-    asyncStatus = (await statusResponse.json()) as { data: { report?: { exitStatus: string }; state: string } };
+    asyncStatus = (await statusResponse.json()) as {
+      data: { report?: { exitStatus: string }; state: string };
+    };
     if (asyncStatus.data.state === 'succeeded') {
       break;
     }
@@ -339,7 +356,13 @@ test('Engine HTTP run endpoint returns structured artifacts and run report', asy
 
   const artifactsManifest = JSON.parse(
     await readFile(validateManifest.data.artifacts.artifactsManifestPath, 'utf8'),
-  ) as { lastRun?: { correlation?: { projectId?: string }; profile: string; runSummaryMarkdownPath?: string } };
+  ) as {
+    lastRun?: {
+      correlation?: { projectId?: string };
+      profile: string;
+      runSummaryMarkdownPath?: string;
+    };
+  };
   assert.equal(artifactsManifest.lastRun?.profile, 'support_only');
   assert.equal(artifactsManifest.lastRun?.correlation?.projectId, 'project-123');
   assert.match(String(artifactsManifest.lastRun?.runSummaryMarkdownPath || ''), /run-summary\.md$/);

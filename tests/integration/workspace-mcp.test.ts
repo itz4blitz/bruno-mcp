@@ -165,7 +165,7 @@ docs: ''
   const updateEnvironmentText = await callToolText(session.client, 'update_environment_vars', {
     collectionPath,
     environmentName: 'Local',
-    set: { tenantId: 85 },
+    set: { workspaceId: 85 },
     unset: [],
   });
   assert.match(updateEnvironmentText, /Failed to update environment/);

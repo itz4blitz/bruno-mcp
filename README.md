@@ -39,10 +39,15 @@ This fork is built around that philosophy.
 ### Generate Bruno assets
 
 - REST request generation
+- OpenAPI contract inspection and coverage-denominator manifests
+- OData-over-OpenAPI entity/query/key modeling
+- REST/OData contract-suite scaffolding with Desktop-ready environments
 - GraphQL-over-HTTP request generation
 - binary file upload request generation
 - dependency-aware suite generation using runtime vars
 - CRUD request scaffolding
+- Bruno CLI run command generation/execution
+- variable-source auditing for Desktop and CLI readiness
 
 ### Manage Bruno workspaces and collections
 
@@ -58,14 +63,14 @@ This fork is built around that philosophy.
 
 - tools for deterministic mutation
 - feature-slice planning, scaffolding, auditing, and findings capture
-- OpenAPI/controller contract inspection for controller-aware slice planning
+- OpenAPI contract inspection, OData modeling, and coverage-denominator manifests
 - strict matrix scaffolding with request-owned base payloads and scenario-delta files
 - explicit support request scaffolding with visible auth/seed/resolve/lookup/cleanup helpers
 - project overlay support for product-specific raw/DTO overlay behavior
 - resources for read-only Bruno state inspection
 - prompts for common workflows
 - argument completion for paths and styles
-- roots-aware path enforcement when the client provides roots
+- roots-aware path enforcement when the client provides roots, with `BRUNO_MCP_EXTRA_ROOTS` for trusted local multi-repo workspaces
 - logging notifications
 - progress notifications
 - safe elicitation for destructive/ambiguous operations
@@ -78,6 +83,11 @@ This fork is built around that philosophy.
 | Workspace / OpenCollection YAML                                           | Implemented                    |
 | Request metadata parity (assertions, tags, settings, docs, vars, scripts) | Implemented                    |
 | Workspace / collection / folder / request / env CRUD                      | Implemented                    |
+| Desktop-ready environment file hydration                                  | Implemented                    |
+| OpenAPI/OData contract inspection and coverage manifests                  | Implemented foundation         |
+| REST/OData contract-suite scaffolding                                     | Implemented                    |
+| Collection run command execution                                          | Implemented                    |
+| Variable source graph audit                                               | Implemented foundation         |
 | MCP tools                                                                 | Implemented                    |
 | MCP resources                                                             | Implemented                    |
 | MCP prompts                                                               | Implemented                    |
@@ -87,8 +97,10 @@ This fork is built around that philosophy.
 | Logging / progress                                                        | Implemented                    |
 | Elicitation                                                               | Implemented                    |
 | Sampling                                                                  | Not implemented                |
+| GraphQL schema introspection coverage                                     | Not implemented                |
 | gRPC generation                                                           | Not implemented                |
 | WebSocket generation                                                      | Not implemented                |
+| SOAP/WSDL generation                                                      | Not implemented                |
 | Desktop active-environment persistence                                    | Not implemented / not verified |
 
 ## Supported Bruno Storage Models
@@ -117,6 +129,14 @@ This fork is built around that philosophy.
 
 - `create_collection`
 - `create_environment`
+- `configure_desktop_environment`
+- `hydrate_odata_seed_environment`
+- `inspect_api_contract`
+- `generate_contract_coverage_manifest`
+- `validate_contract_coverage_manifest`
+- `scaffold_api_contract_suite`
+- `audit_variable_sources`
+- `run_collection`
 - `create_request`
 - `add_test_script`
 - `create_test_suite`
@@ -302,7 +322,7 @@ More setup details live in `docs/CLIENT_SETUP.md`.
     "Accept": "application/json"
   },
   "preRequestVars": {
-    "tenantId": 85
+    "workspaceId": 85
   },
   "preRequestScript": "await bru.runRequest('Auth/login')"
 }

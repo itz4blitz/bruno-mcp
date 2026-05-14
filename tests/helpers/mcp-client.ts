@@ -11,6 +11,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 type McpTestClientOptions = {
+  env?: Record<string, string | undefined>;
   elicitationResponse?: {
     action: 'accept' | 'cancel' | 'decline';
     content?: Record<string, boolean | number | string | string[]>;
@@ -25,7 +26,7 @@ export async function createMcpTestClient(options: McpTestClientOptions = {}) {
     command: process.execPath,
     args: ['--import', 'tsx', 'src/index.ts'],
     cwd: REPO_ROOT,
-    env: toSpawnEnv(process.env),
+    env: toSpawnEnv({ ...process.env, ...options.env }),
     stderr: 'pipe',
   });
 

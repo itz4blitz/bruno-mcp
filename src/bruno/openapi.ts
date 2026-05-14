@@ -35,7 +35,10 @@ type OpenApiOperation = {
     content?: Record<string, { schema?: OpenApiSchema }>;
     required?: boolean;
   };
-  responses?: Record<string, { content?: Record<string, { schema?: OpenApiSchema }>; description?: string }>;
+  responses?: Record<
+    string,
+    { content?: Record<string, { schema?: OpenApiSchema }>; description?: string }
+  >;
   security?: unknown[];
   summary?: string;
   tags?: string[];
@@ -107,7 +110,10 @@ export class OpenApiContractManager {
       authRequired: operations.some((operation) => operation.authRequired),
       basePath: this.inferBasePath(operations),
       controllerName,
-      operations: operations.toSorted((left, right) => left.path.localeCompare(right.path) || left.method.localeCompare(right.method)),
+      operations: operations.toSorted(
+        (left, right) =>
+          left.path.localeCompare(right.path) || left.method.localeCompare(right.method),
+      ),
       source: {
         format: 'openapi',
         path: sourcePath,
@@ -131,7 +137,11 @@ export class OpenApiContractManager {
     return {
       action,
       actionId,
-      authRequired: Array.isArray(operation.security) ? operation.security.length > 0 : Array.isArray(document.security) ? document.security.length > 0 : false,
+      authRequired: Array.isArray(operation.security)
+        ? operation.security.length > 0
+        : Array.isArray(document.security)
+          ? document.security.length > 0
+          : false,
       method,
       operationId: operation.operationId,
       parameters,
@@ -192,7 +202,10 @@ export class OpenApiContractManager {
 
   private normalizeResponses(
     document: OpenApiDocument,
-    responses: Record<string, { content?: Record<string, { schema?: OpenApiSchema }>; description?: string }>,
+    responses: Record<
+      string,
+      { content?: Record<string, { schema?: OpenApiSchema }>; description?: string }
+    >,
   ): ControllerResponseContract[] {
     return Object.entries(responses)
       .filter(([statusCode]) => /^\d+$/.test(statusCode))
@@ -208,7 +221,10 @@ export class OpenApiContractManager {
       .toSorted((left, right) => left.statusCode - right.statusCode);
   }
 
-  private normalizeSchemaFields(document: OpenApiDocument, schema: OpenApiSchema | undefined): ControllerSchemaField[] {
+  private normalizeSchemaFields(
+    document: OpenApiDocument,
+    schema: OpenApiSchema | undefined,
+  ): ControllerSchemaField[] {
     const resolved = this.resolveSchema(document, schema);
     if (!resolved) {
       return [];
@@ -233,7 +249,10 @@ export class OpenApiContractManager {
     });
   }
 
-  private resolveSchema(document: OpenApiDocument, schema: OpenApiSchema | undefined): OpenApiSchema | undefined {
+  private resolveSchema(
+    document: OpenApiDocument,
+    schema: OpenApiSchema | undefined,
+  ): OpenApiSchema | undefined {
     if (!schema) {
       return undefined;
     }
@@ -259,7 +278,9 @@ export class OpenApiContractManager {
   }
 
   private inferBasePath(operations: ControllerOperationContract[]): string {
-    const listLike = operations.find((operation) => operation.action === 'create' || operation.action === 'list');
+    const listLike = operations.find(
+      (operation) => operation.action === 'create' || operation.action === 'list',
+    );
     if (listLike) {
       return listLike.path;
     }

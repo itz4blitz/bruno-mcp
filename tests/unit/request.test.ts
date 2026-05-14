@@ -30,7 +30,7 @@ test('addTestScript and updateRequest preserve existing supported sections', asy
     headers: {
       Accept: 'application/json',
       'X-Auth-Token': '{{authToken}}',
-      'X-Tenant-Id': '{{tenantId}}',
+      'X-Workspace-Id': '{{workspaceId}}',
     },
     auth: {
       type: 'bearer',
@@ -75,10 +75,10 @@ test('addTestScript and updateRequest preserve existing supported sections', asy
   assert.match(content, /expect\(res.status\)\.to.equal\(200\)/);
   assert.match(content, /Accept: application\/json/);
   assert.match(content, /X-Auth-Token: \{\{authToken\}\}/);
-  assert.match(content, /X-Tenant-Id: \{\{tenantId\}\}/);
+  assert.match(content, /X-Workspace-Id: \{\{workspaceId\}\}/);
   assert.doesNotMatch(content, /Accept: 'application\/json'/);
   assert.doesNotMatch(content, /X-Auth-Token: '\{\{authToken\}\}'/);
-  assert.doesNotMatch(content, /X-Tenant-Id: '\{\{tenantId\}\}'/);
+  assert.doesNotMatch(content, /X-Workspace-Id: '\{\{workspaceId\}\}'/);
 
   const loaded = await requestBuilder.loadRequest(bruFilePath);
   assert.equal(loaded.http.url, '{{baseUrl}}/users/{{id}}');

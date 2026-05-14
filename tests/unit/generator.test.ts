@@ -53,14 +53,14 @@ get {
 }
 
 auth:bearer {
-  token: '{{token}}'
+  token: {{token}}
 }
 
 headers {
-  Accept: 'application/json'
+  Accept: application/json
 }
 
-query {
+params:query {
   limit: 10
   includeInactive: false
 }
@@ -125,11 +125,11 @@ post {
 }
 
 auth:bearer {
-  token: '{{token}}'
+  token: {{token}}
 }
 
 headers {
-  content-type: 'application/json'
+  content-type: application/json
 }
 
 body:graphql {

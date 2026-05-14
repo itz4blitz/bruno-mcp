@@ -38,8 +38,7 @@ export const FEATURE_SLICE_TYPE_VALUES = [
 
 export const FEATURE_SLICE_OVERLAY_VALUES = ['raw-dto-overlay'] as const;
 
-export type FeatureSliceType =
-  | (typeof FEATURE_SLICE_TYPE_VALUES)[number];
+export type FeatureSliceType = (typeof FEATURE_SLICE_TYPE_VALUES)[number];
 
 export type SupportRequestRole = 'auth' | 'cleanup' | 'lookup' | 'resolve' | 'seed';
 
@@ -615,7 +614,9 @@ export class FeatureSliceManager {
       Record<string, unknown>
     >;
     const manifest = await this.readManifest(input.collectionPath, sliceId);
-    const relatedRequests = requests.filter((request) => this.isRequestRelated(request, input.featureName));
+    const relatedRequests = requests.filter((request) =>
+      this.isRequestRelated(request, input.featureName),
+    );
     const missingCoverage = this.getMissingCoverage(folders, relatedRequests, input.featureName);
     const duplicationSignals = this.getDuplicationSignals(relatedRequests, collectionDefaults);
     const brunoNativeOpportunities = this.getBrunoNativeOpportunities(
@@ -653,10 +654,14 @@ export class FeatureSliceManager {
     const sliceId = slugify(input.featureName);
     const contract = input.controllerContract;
     const contractBasePath = contract?.basePath;
-    const targetResource = singularize(slugify(input.targetResource || contract?.controllerName || input.featureName));
+    const targetResource = singularize(
+      slugify(input.targetResource || contract?.controllerName || input.featureName),
+    );
     const featureFolderRoot = `Features/${titleCase(input.featureName)}`;
     const basePath = this.normalizeBasePath(
-      input.basePath || contractBasePath || `/${slugify(input.targetResource || input.featureName)}`,
+      input.basePath ||
+        contractBasePath ||
+        `/${slugify(input.targetResource || input.featureName)}`,
     );
     const strictMode = input.strictMode !== false;
     const convenienceMode = Boolean(input.convenienceMode);
@@ -667,13 +672,15 @@ export class FeatureSliceManager {
       supportFolders: SUPPORT_FOLDER_GROUPS.map((name) => `Support/${name}`),
     };
 
-    const requiredInputs = dedupe([
-      'baseUrl',
-      `${targetResource}Id`,
-      strictMode ? `${targetResource}AuthToken` : '',
-      ...(contract ? this.getContractRequiredInputs(contract, targetResource) : []),
-      ...overlayDetails.requiredInputs,
-    ].filter(Boolean));
+    const requiredInputs = dedupe(
+      [
+        'baseUrl',
+        `${targetResource}Id`,
+        strictMode ? `${targetResource}AuthToken` : '',
+        ...(contract ? this.getContractRequiredInputs(contract, targetResource) : []),
+        ...overlayDetails.requiredInputs,
+      ].filter(Boolean),
+    );
 
     const supportRequests = this.buildSupportRequests({
       basePath,
@@ -714,13 +721,17 @@ export class FeatureSliceManager {
     if (overlayDetails.cleanupPolicyStatus) {
       cleanupPolicy.status = overlayDetails.cleanupPolicyStatus;
     }
-    const assumptions = dedupe([
-      'Feature slices should keep shared auth, vars, scripts, and tests in collection or folder defaults when possible.',
-      'Support requests must stay explicit; core requests must not silently branch into hidden setup.',
-      'Strict matrix mode requires scenario deltas to declare expectedStatus and expectedOutcome for every row.',
-      input.overlay ? `Overlay ${input.overlay} will be treated as project-specific logic layered on top of generic Bruno mechanics.` : '',
-      ...overlayDetails.docsNotes,
-    ].filter(Boolean));
+    const assumptions = dedupe(
+      [
+        'Feature slices should keep shared auth, vars, scripts, and tests in collection or folder defaults when possible.',
+        'Support requests must stay explicit; core requests must not silently branch into hidden setup.',
+        'Strict matrix mode requires scenario deltas to declare expectedStatus and expectedOutcome for every row.',
+        input.overlay
+          ? `Overlay ${input.overlay} will be treated as project-specific logic layered on top of generic Bruno mechanics.`
+          : '',
+        ...overlayDetails.docsNotes,
+      ].filter(Boolean),
+    );
 
     return {
       assumptions,
@@ -772,39 +783,45 @@ export class FeatureSliceManager {
 
     if (input.includeSupportRequests !== false) {
       for (const support of plan.supportRequests) {
-        const requestPath = await this.writeRequest(plan.collectionPath, {
-          assertions: [
-            { name: 'res.status', value: `eq ${support.expectedStatus}` },
-          ],
-          body: this.buildSupportRequestBody(support, dynamicData),
-          docs: this.describeSupportRequest(support, plan.cleanupPolicy),
-          folder: support.folder,
-          headers: support.headers,
-          method: support.method,
-          name: support.name,
-          tags: [plan.sliceId, 'support', support.role],
-          tests: this.buildSupportRequestTests(support),
-          url: support.url,
-        }, {
-          postResponseScript: support.postResponseScript,
-        });
+        const requestPath = await this.writeRequest(
+          plan.collectionPath,
+          {
+            assertions: [{ name: 'res.status', value: `eq ${support.expectedStatus}` }],
+            body: this.buildSupportRequestBody(support, dynamicData),
+            docs: this.describeSupportRequest(support, plan.cleanupPolicy),
+            folder: support.folder,
+            headers: support.headers,
+            method: support.method,
+            name: support.name,
+            tags: [plan.sliceId, 'support', support.role],
+            tests: this.buildSupportRequestTests(support),
+            url: support.url,
+          },
+          {
+            postResponseScript: support.postResponseScript,
+          },
+        );
         createdRequests.push(requestPath);
         supportRequestPaths.set(support.name, requestPath);
       }
     }
 
     for (const coreRequest of plan.coreRequests) {
-      const requestPath = await this.writeRequest(plan.collectionPath, {
-        body: coreRequest.body,
-        docs: this.describeCoreRequest(coreRequest, plan),
-        folder: coreRequest.folder,
-        headers: coreRequest.headers,
-        method: coreRequest.method,
-        name: coreRequest.name,
-        tags: coreRequest.tags,
-        tests: this.buildStatusTest(coreRequest.expectedStatus),
-        url: coreRequest.url,
-      }, this.getCoreRequestPatch(coreRequest, plan, dynamicData));
+      const requestPath = await this.writeRequest(
+        plan.collectionPath,
+        {
+          body: coreRequest.body,
+          docs: this.describeCoreRequest(coreRequest, plan),
+          folder: coreRequest.folder,
+          headers: coreRequest.headers,
+          method: coreRequest.method,
+          name: coreRequest.name,
+          tags: coreRequest.tags,
+          tests: this.buildStatusTest(coreRequest.expectedStatus),
+          url: coreRequest.url,
+        },
+        this.getCoreRequestPatch(coreRequest, plan, dynamicData),
+      );
       createdRequests.push(requestPath);
       coreRequestPaths.set(coreRequest.name, requestPath);
     }
@@ -833,7 +850,12 @@ export class FeatureSliceManager {
       }
     }
 
-    const runManifest = this.buildRunManifest(plan, supportRequestPaths, coreRequestPaths, matrixRequestPaths);
+    const runManifest = this.buildRunManifest(
+      plan,
+      supportRequestPaths,
+      coreRequestPaths,
+      matrixRequestPaths,
+    );
     const supportGraph = this.buildSupportGraph(plan);
     const manifest = await this.persistManifest(plan, dynamicData, runManifest, supportGraph);
     await this.writeSupportGraphFile(plan.collectionPath, plan.sliceId, supportGraph);
@@ -856,7 +878,11 @@ export class FeatureSliceManager {
     scenarioFilePath: string;
   }> {
     if (input.strictMode !== false) {
-      this.validateMatrixScenarios(input.requiredIterationFields, input.allowedDeltaPaths, input.scenarioDeltas);
+      this.validateMatrixScenarios(
+        input.requiredIterationFields,
+        input.allowedDeltaPaths,
+        input.scenarioDeltas,
+      );
     }
 
     const basePayloadRef = `${input.sliceId}.${slugify(input.requestName)}.basePayload`;
@@ -938,7 +964,9 @@ export class FeatureSliceManager {
     };
   }
 
-  async scaffoldSupportRequests(input: ScaffoldSupportRequestsInput): Promise<{ requestPaths: string[] }> {
+  async scaffoldSupportRequests(
+    input: ScaffoldSupportRequestsInput,
+  ): Promise<{ requestPaths: string[] }> {
     const plan = await this.planFeatureSlice({
       collectionPath: input.collectionPath,
       featureName: input.featureName,
@@ -946,27 +974,31 @@ export class FeatureSliceManager {
       strictMode: input.strictMode,
       targetResource: input.targetResource,
     });
-    const selected = plan.supportRequests.filter((support) => input.supportKinds.includes(support.role));
+    const selected = plan.supportRequests.filter((support) =>
+      input.supportKinds.includes(support.role),
+    );
     const dynamicData = this.generateDynamicData();
     const requestPaths: string[] = [];
 
     for (const support of selected) {
-      const requestPath = await this.writeRequest(input.collectionPath, {
-        assertions: [
-          { name: 'res.status', value: `eq ${support.expectedStatus}` },
-        ],
-        body: this.buildSupportRequestBody(support, dynamicData),
-        docs: this.describeSupportRequest(support, plan.cleanupPolicy),
-        folder: support.folder,
-        headers: support.headers,
-        method: support.method,
-        name: support.name,
-        tags: [plan.sliceId, 'support', support.role],
-        tests: this.buildSupportRequestTests(support),
-        url: support.url,
-      }, {
-        postResponseScript: support.postResponseScript,
-      });
+      const requestPath = await this.writeRequest(
+        input.collectionPath,
+        {
+          assertions: [{ name: 'res.status', value: `eq ${support.expectedStatus}` }],
+          body: this.buildSupportRequestBody(support, dynamicData),
+          docs: this.describeSupportRequest(support, plan.cleanupPolicy),
+          folder: support.folder,
+          headers: support.headers,
+          method: support.method,
+          name: support.name,
+          tags: [plan.sliceId, 'support', support.role],
+          tests: this.buildSupportRequestTests(support),
+          url: support.url,
+        },
+        {
+          postResponseScript: support.postResponseScript,
+        },
+      );
       requestPaths.push(requestPath);
     }
 
@@ -976,14 +1008,18 @@ export class FeatureSliceManager {
   async auditFeatureSlice(input: AuditFeatureSliceInput): Promise<Record<string, unknown>> {
     const manifest = await this.readManifest(input.collectionPath, input.sliceId);
     if (!manifest) {
-      throw new BrunoError(`Feature slice ${input.sliceId} has not been scaffolded`, 'VALIDATION_ERROR');
+      throw new BrunoError(
+        `Feature slice ${input.sliceId} has not been scaffolded`,
+        'VALIDATION_ERROR',
+      );
     }
 
     const requests = (await this.nativeManager.listRequests(input.collectionPath)) as Array<
       Record<string, unknown>
     >;
-    const sliceRequests = requests.filter((request) =>
-      Array.isArray(request.tags) && (request.tags as string[]).includes(input.sliceId),
+    const sliceRequests = requests.filter(
+      (request) =>
+        Array.isArray(request.tags) && (request.tags as string[]).includes(input.sliceId),
     );
     const collectionDefects: SliceFinding[] = [];
     const coverageGaps: SliceFinding[] = [];
@@ -1016,7 +1052,8 @@ export class FeatureSliceManager {
           requestPath: String(request.path || ''),
           severity: 'low',
           title: `${String(request.name)} is missing tags`,
-          recommendedAction: 'Tag slice, scenario class, and notable state such as known-bug explicitly.',
+          recommendedAction:
+            'Tag slice, scenario class, and notable state such as known-bug explicitly.',
         });
       }
     }
@@ -1061,7 +1098,8 @@ export class FeatureSliceManager {
           requestPath: String(request.path || ''),
           severity: 'high',
           title: `${String(request.name)} is tagged known-bug`,
-          recommendedAction: 'Keep the assertion correct and document the observed defect explicitly.',
+          recommendedAction:
+            'Keep the assertion correct and document the observed defect explicitly.',
         });
       }
     }
@@ -1076,19 +1114,27 @@ export class FeatureSliceManager {
     };
   }
 
-  async recordFindings(input: RecordSliceFindingsInput): Promise<{ findingsPath: string; manifestPath: string }> {
+  async recordFindings(
+    input: RecordSliceFindingsInput,
+  ): Promise<{ findingsPath: string; manifestPath: string }> {
     const manifest = await this.requireManifest(input.collectionPath, input.sliceId);
     manifest.findings = input.findings;
     manifest.updatedAt = new Date().toISOString();
     const manifestPath = await this.writeManifest(input.collectionPath, input.sliceId, manifest);
-    const findingsPath = await this.writeFindingsDocument(input.collectionPath, input.sliceId, input.findings);
+    const findingsPath = await this.writeFindingsDocument(
+      input.collectionPath,
+      input.sliceId,
+      input.findings,
+    );
 
     if (input.writeMode === 'request-docs') {
       for (const finding of input.findings) {
         if (!finding.requestPath) {
           continue;
         }
-        const existingRequest = (await this.nativeManager.getRequest(finding.requestPath)) as Record<string, unknown>;
+        const existingRequest = (await this.nativeManager.getRequest(
+          finding.requestPath,
+        )) as Record<string, unknown>;
         const updatedDocs = [
           String(existingRequest.docs || ''),
           '',
@@ -1120,7 +1166,9 @@ export class FeatureSliceManager {
 
   async generateRunManifest(collectionPath: string, sliceId: string): Promise<FeatureRunManifest> {
     const manifest = await this.requireManifest(collectionPath, sliceId);
-    const requests = (await this.nativeManager.listRequests(collectionPath)) as Array<Record<string, unknown>>;
+    const requests = (await this.nativeManager.listRequests(collectionPath)) as Array<
+      Record<string, unknown>
+    >;
     const pathByName = new Map(
       requests.flatMap((request) => {
         const name = this.normalizeRequestName(String(request.name || ''));
@@ -1177,7 +1225,10 @@ export class FeatureSliceManager {
     return manifest.runManifest || (await this.generateRunManifest(collectionPath, sliceId));
   }
 
-  async inspectSupportGraph(collectionPath: string, sliceId: string): Promise<FeatureSliceSupportGraph> {
+  async inspectSupportGraph(
+    collectionPath: string,
+    sliceId: string,
+  ): Promise<FeatureSliceSupportGraph> {
     const manifest = await this.requireManifest(collectionPath, sliceId);
     return manifest.supportGraph || this.buildSupportGraph(manifest.plan);
   }
@@ -1187,7 +1238,8 @@ export class FeatureSliceManager {
     sliceId: string,
     graph: FeatureSliceSupportGraph,
   ): Promise<string> {
-    const supportGraphPath = (await this.getArtifactBundle(collectionPath, sliceId)).supportGraphPath;
+    const supportGraphPath = (await this.getArtifactBundle(collectionPath, sliceId))
+      .supportGraphPath;
     await fs.mkdir(dirname(supportGraphPath), { recursive: true });
     await fs.writeFile(supportGraphPath, `${JSON.stringify(graph, null, 2)}\n`);
     await this.writeArtifactsManifest(collectionPath, sliceId, {});
@@ -1223,7 +1275,8 @@ export class FeatureSliceManager {
         generatedAt: new Date().toISOString(),
         profile: report.profile,
         runReportPath,
-        runSummaryMarkdownPath: (await this.getArtifactBundle(collectionPath, sliceId)).runSummaryMarkdownPath,
+        runSummaryMarkdownPath: (await this.getArtifactBundle(collectionPath, sliceId))
+          .runSummaryMarkdownPath,
       },
     });
     return runReportPath;
@@ -1264,7 +1317,13 @@ export class FeatureSliceManager {
       '',
       ...(failureLines.length > 0 ? failureLines : ['- none']),
       validation
-        ? ['', '## Manifest Validation', '', ...validation.errors.map((error) => `- error: ${error}`), ...validation.warnings.map((warning) => `- warning: ${warning}`)]
+        ? [
+            '',
+            '## Manifest Validation',
+            '',
+            ...validation.errors.map((error) => `- error: ${error}`),
+            ...validation.warnings.map((warning) => `- warning: ${warning}`),
+          ]
         : [],
     ]
       .flat()
@@ -1277,7 +1336,8 @@ export class FeatureSliceManager {
     validation: FeatureRunManifestValidation,
     audit: Record<string, unknown>,
   ): string {
-    const collectionDefects = ((audit as { collectionDefects?: unknown[] }).collectionDefects || []).length;
+    const collectionDefects = ((audit as { collectionDefects?: unknown[] }).collectionDefects || [])
+      .length;
     const coverageGaps = ((audit as { coverageGaps?: unknown[] }).coverageGaps || []).length;
     const productDefects = ((audit as { productDefects?: unknown[] }).productDefects || []).length;
     return [
@@ -1293,11 +1353,15 @@ export class FeatureSliceManager {
       '',
       '## Errors',
       '',
-      ...(validation.errors.length > 0 ? validation.errors.map((error) => `- ${error}`) : ['- none']),
+      ...(validation.errors.length > 0
+        ? validation.errors.map((error) => `- ${error}`)
+        : ['- none']),
       '',
       '## Warnings',
       '',
-      ...(validation.warnings.length > 0 ? validation.warnings.map((warning) => `- ${warning}`) : ['- none']),
+      ...(validation.warnings.length > 0
+        ? validation.warnings.map((warning) => `- ${warning}`)
+        : ['- none']),
     ].join('\n');
   }
 
@@ -1354,7 +1418,10 @@ export class FeatureSliceManager {
     return bundle.runSummaryMarkdownPath;
   }
 
-  async validateRunManifest(collectionPath: string, sliceId: string): Promise<FeatureRunManifestValidation> {
+  async validateRunManifest(
+    collectionPath: string,
+    sliceId: string,
+  ): Promise<FeatureRunManifestValidation> {
     const manifest = await this.inspectRunManifest(collectionPath, sliceId);
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -1392,11 +1459,16 @@ export class FeatureSliceManager {
     };
   }
 
-  async inspectCoverageSummary(collectionPath: string, sliceId: string): Promise<Record<string, unknown>> {
+  async inspectCoverageSummary(
+    collectionPath: string,
+    sliceId: string,
+  ): Promise<Record<string, unknown>> {
     const manifest = await this.requireManifest(collectionPath, sliceId);
-    const requests = (await this.nativeManager.listRequests(collectionPath)) as Array<Record<string, unknown>>;
-    const sliceRequests = requests.filter((request) =>
-      Array.isArray(request.tags) && (request.tags as string[]).includes(sliceId),
+    const requests = (await this.nativeManager.listRequests(collectionPath)) as Array<
+      Record<string, unknown>
+    >;
+    const sliceRequests = requests.filter(
+      (request) => Array.isArray(request.tags) && (request.tags as string[]).includes(sliceId),
     );
     return {
       controllerCoverage: this.getControllerCoverage(sliceRequests),
@@ -1411,7 +1483,10 @@ export class FeatureSliceManager {
     return join(this.getMetadataRoot(collectionPath, sliceId), 'artifacts.json');
   }
 
-  async getArtifactBundle(collectionPath: string, sliceId: string): Promise<FeatureSliceArtifactBundle> {
+  async getArtifactBundle(
+    collectionPath: string,
+    sliceId: string,
+  ): Promise<FeatureSliceArtifactBundle> {
     const metadataRoot = this.getMetadataRoot(collectionPath, sliceId);
     return {
       artifactsManifestPath: this.getArtifactsManifestPath(collectionPath, sliceId),
@@ -1439,7 +1514,9 @@ export class FeatureSliceManager {
     const manifestPath = bundle.artifactsManifestPath;
     let existing: FeatureSliceArtifactsManifest | null = null;
     try {
-      existing = JSON.parse(await fs.readFile(manifestPath, 'utf8')) as FeatureSliceArtifactsManifest;
+      existing = JSON.parse(
+        await fs.readFile(manifestPath, 'utf8'),
+      ) as FeatureSliceArtifactsManifest;
     } catch {
       existing = null;
     }
@@ -1456,13 +1533,21 @@ export class FeatureSliceManager {
     return manifestPath;
   }
 
-  async validateFeatureSlice(collectionPath: string, sliceId: string): Promise<FeatureSliceValidationResult> {
+  async validateFeatureSlice(
+    collectionPath: string,
+    sliceId: string,
+  ): Promise<FeatureSliceValidationResult> {
     const [audit, manifestValidation, artifacts] = await Promise.all([
       this.auditFeatureSlice({ collectionPath, sliceId }),
       this.validateRunManifest(collectionPath, sliceId),
       this.getArtifactBundle(collectionPath, sliceId),
     ]);
-    await this.writeValidationSummaryMarkdownFile(collectionPath, sliceId, manifestValidation, audit);
+    await this.writeValidationSummaryMarkdownFile(
+      collectionPath,
+      sliceId,
+      manifestValidation,
+      audit,
+    );
     return {
       artifacts,
       audit,
@@ -1476,7 +1561,8 @@ export class FeatureSliceManager {
 
   async runFeatureSlice(input: RunFeatureSliceInput): Promise<FeatureRunReport> {
     const manifest = await this.requireManifest(input.collectionPath, input.sliceId);
-    const runManifest = manifest.runManifest || (await this.generateRunManifest(input.collectionPath, input.sliceId));
+    const runManifest =
+      manifest.runManifest || (await this.generateRunManifest(input.collectionPath, input.sliceId));
     const profile = input.profile || 'full';
     const steps = runManifest.steps.filter((step) => step.profileMembership.includes(profile));
     const stepResults: FeatureRunStepResult[] = [];
@@ -1562,7 +1648,9 @@ export class FeatureSliceManager {
     return {
       audit,
       manifest,
-      runManifestValidation: manifest.runManifest ? await this.validateRunManifest(collectionPath, sliceId) : null,
+      runManifestValidation: manifest.runManifest
+        ? await this.validateRunManifest(collectionPath, sliceId)
+        : null,
       runManifest: manifest.runManifest || null,
     };
   }
@@ -1572,7 +1660,9 @@ export class FeatureSliceManager {
     const relativePath = slugify(String(request.relativePath || ''));
     const name = slugify(String(request.name || ''));
     const tags = Array.isArray(request.tags) ? request.tags.map((tag) => slugify(String(tag))) : [];
-    return relativePath.includes(normalized) || name.includes(normalized) || tags.includes(normalized);
+    return (
+      relativePath.includes(normalized) || name.includes(normalized) || tags.includes(normalized)
+    );
   }
 
   private getMissingCoverage(
@@ -1591,10 +1681,18 @@ export class FeatureSliceManager {
     if (!requests.some((request) => String(request.relativePath || '').includes('/Support/'))) {
       missing.push('missing explicit support request coverage');
     }
-    if (!requests.some((request) => Array.isArray(request.assertions) && request.assertions.length > 0)) {
+    if (
+      !requests.some(
+        (request) => Array.isArray(request.assertions) && request.assertions.length > 0,
+      )
+    ) {
       missing.push('missing request-level assertions for related requests');
     }
-    if (!requests.some((request) => typeof request.docs === 'string' && request.docs.trim().length > 0)) {
+    if (
+      !requests.some(
+        (request) => typeof request.docs === 'string' && request.docs.trim().length > 0,
+      )
+    ) {
       missing.push('missing request docs for related requests');
     }
     const controllerCoverage = this.getControllerCoverage(requests);
@@ -1658,8 +1756,9 @@ export class FeatureSliceManager {
     }
 
     if (
-      requests.filter((request) => typeof request.tests === 'string' && String(request.tests).trim().length > 0)
-        .length > 2 &&
+      requests.filter(
+        (request) => typeof request.tests === 'string' && String(request.tests).trim().length > 0,
+      ).length > 2 &&
       String(collectionDefaults.tests || '').trim().length === 0
     ) {
       signals.push('request-level tests repeat while collection defaults tests are empty');
@@ -1678,14 +1777,18 @@ export class FeatureSliceManager {
       opportunities.push('collection defaults docs could state shared auth/setup/testing policy');
     }
     if (!folders.some((folder) => folder.startsWith('Support/'))) {
-      opportunities.push('support folders are missing; explicit auth/seed/resolve/cleanup helpers would improve Bruno UX');
+      opportunities.push(
+        'support folders are missing; explicit auth/seed/resolve/cleanup helpers would improve Bruno UX',
+      );
     }
     if (
       requests.some((request) => Array.isArray(request.headers) && request.headers.length > 0) &&
       Array.isArray(collectionDefaults.headers) &&
       collectionDefaults.headers.length === 0
     ) {
-      opportunities.push('common headers may belong in collection or folder defaults instead of per-request duplication');
+      opportunities.push(
+        'common headers may belong in collection or folder defaults instead of per-request duplication',
+      );
     }
     return opportunities;
   }
@@ -1713,7 +1816,8 @@ export class FeatureSliceManager {
               kind: 'collection-defect',
               severity: 'high',
               title: `${matrix.requestName} contains an invalid scenario row`,
-              recommendedAction: 'Each scenario row must be an object with only strict matrix keys.',
+              recommendedAction:
+                'Each scenario row must be an object with only strict matrix keys.',
             });
             continue;
           }
@@ -1734,7 +1838,8 @@ export class FeatureSliceManager {
               kind: 'collection-defect',
               severity: 'high',
               title: `${matrix.requestName} scenario file contains basePayload`,
-              recommendedAction: 'Move stable valid payload ownership back into the request and metadata file.',
+              recommendedAction:
+                'Move stable valid payload ownership back into the request and metadata file.',
             });
           }
         }
@@ -1764,7 +1869,8 @@ export class FeatureSliceManager {
         kind: 'coverage-gap',
         severity: 'medium',
         title: `${matrix.requestName} metadata file is missing`,
-        recommendedAction: 'Restore matrix metadata so required fields and allowed delta paths stay explicit.',
+        recommendedAction:
+          'Restore matrix metadata so required fields and allowed delta paths stay explicit.',
       });
     }
 
@@ -1789,7 +1895,11 @@ export class FeatureSliceManager {
         method: 'POST',
         name: `Authenticate ${title} Slice`,
         outputs: ['authToken'],
-        postResponseScript: this.buildSupportOutputScript('authToken', ['token', 'accessToken', 'data.token']),
+        postResponseScript: this.buildSupportOutputScript('authToken', [
+          'token',
+          'accessToken',
+          'data.token',
+        ]),
         requiredInputs: ['username', 'password'],
         role: 'auth',
         url: '{{baseUrl}}/auth/login',
@@ -1805,7 +1915,10 @@ export class FeatureSliceManager {
         method: 'POST',
         name: `Seed ${title}`,
         outputs: [`${args.targetResource}Id`],
-        postResponseScript: this.buildSupportOutputScript(`${args.targetResource}Id`, ['id', 'data.id']),
+        postResponseScript: this.buildSupportOutputScript(`${args.targetResource}Id`, [
+          'id',
+          'data.id',
+        ]),
         requiredInputs: ['baseUrl'],
         role: 'seed',
         url: `{{baseUrl}}${args.basePath}`,
@@ -1813,13 +1926,18 @@ export class FeatureSliceManager {
         visibility: 'strict',
       },
       {
-        description: 'Resolve a resource id from a stable unique key before read/update/delete flows.',
+        description:
+          'Resolve a resource id from a stable unique key before read/update/delete flows.',
         expectedStatus: 200,
         folder: 'Support/Resolve',
         method: 'GET',
         name: `Resolve ${title}`,
         outputs: [`${args.targetResource}Id`],
-        postResponseScript: this.buildSupportOutputScript(`${args.targetResource}Id`, ['id', 'data.id', 'items.0.id']),
+        postResponseScript: this.buildSupportOutputScript(`${args.targetResource}Id`, [
+          'id',
+          'data.id',
+          'items.0.id',
+        ]),
         requiredInputs: ['baseUrl', `${args.targetResource}LookupKey`],
         role: 'resolve',
         url: `{{baseUrl}}${args.basePath}?lookup={{${args.targetResource}LookupKey}}`,
@@ -1827,16 +1945,18 @@ export class FeatureSliceManager {
         visibility: args.convenienceMode ? 'convenience' : 'strict',
       },
       {
-        description: 'Lookup the resource collection by a support key without mutating product state.',
+        description:
+          'Lookup the resource collection by a support key without mutating product state.',
         expectedStatus: 200,
         folder: 'Support/Resolve',
         method: 'GET',
         name: `Lookup ${title}`,
         outputs: [`${args.targetResource}LookupResult`],
-        postResponseScript: this.buildSupportOutputScript(
-          `${args.targetResource}LookupResult`,
-          ['items.0.id', 'data.id', 'id'],
-        ),
+        postResponseScript: this.buildSupportOutputScript(`${args.targetResource}LookupResult`, [
+          'items.0.id',
+          'data.id',
+          'id',
+        ]),
         requiredInputs: ['baseUrl', `${args.targetResource}LookupKey`],
         role: 'lookup',
         url: `{{baseUrl}}${args.basePath}?lookup={{${args.targetResource}LookupKey}}`,
@@ -1889,7 +2009,10 @@ export class FeatureSliceManager {
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
         name: `Create ${title}`,
-        postResponseScript: this.buildSupportOutputScript(`${args.targetResource}Id`, ['id', 'data.id']),
+        postResponseScript: this.buildSupportOutputScript(`${args.targetResource}Id`, [
+          'id',
+          'data.id',
+        ]),
         requiredSupportRoles: ['auth'],
         tags: [...baseTags, 'happy-path', 'create'],
         url: `{{baseUrl}}${args.basePath}`,
@@ -1934,7 +2057,10 @@ export class FeatureSliceManager {
         headers: { 'Content-Type': 'application/json' },
         method: 'PUT',
         name: `Update ${title}`,
-        postResponseScript: this.buildSupportOutputScript(`${args.targetResource}Id`, ['id', 'data.id']),
+        postResponseScript: this.buildSupportOutputScript(`${args.targetResource}Id`, [
+          'id',
+          'data.id',
+        ]),
         requiredSupportRoles: ['auth', 'resolve'],
         tags: [...baseTags, 'happy-path', 'update'],
         url: `{{baseUrl}}${args.basePath}/{{${args.targetResource}Id}}`,
@@ -2004,7 +2130,11 @@ export class FeatureSliceManager {
       const expectedStatus = this.getExpectedStatusFromContract(operation);
       const requestBody = operation.requestBody
         ? {
-            content: JSON.stringify(this.getBasePayloadFromFields(args.targetResource, operation.requestBody.fields), null, 2),
+            content: JSON.stringify(
+              this.getBasePayloadFromFields(args.targetResource, operation.requestBody.fields),
+              null,
+              2,
+            ),
             type: 'json' as BodyType,
           }
         : undefined;
@@ -2014,10 +2144,14 @@ export class FeatureSliceManager {
         authStrategy: operation.authRequired ? 'explicit-support-var' : 'none',
         body: requestBody,
         category,
-        description: operation.summary || `${title} ${operation.action} operation derived from controller contract.`,
+        description:
+          operation.summary ||
+          `${title} ${operation.action} operation derived from controller contract.`,
         expectedStatus,
         folder: this.getFolderForContractAction(args.featureFolderRoot, operation.action),
-        headers: requestBody ? { 'Content-Type': operation.requestBody?.contentType || 'application/json' } : undefined,
+        headers: requestBody
+          ? { 'Content-Type': operation.requestBody?.contentType || 'application/json' }
+          : undefined,
         method: operation.method,
         name: this.getNameForContractAction(title, operation),
         postResponseScript: ['create', 'update', 'get'].includes(operation.action)
@@ -2030,12 +2164,18 @@ export class FeatureSliceManager {
     });
   }
 
-  private getContractAssertions(operation: ControllerOperationContract): Array<{ name: string; value: string }> {
+  private getContractAssertions(
+    operation: ControllerOperationContract,
+  ): Array<{ name: string; value: string }> {
     const assertions: Array<{ name: string; value: string }> = [];
-    const successResponse = operation.responses.find((response) => response.statusCode >= 200 && response.statusCode < 300);
+    const successResponse = operation.responses.find(
+      (response) => response.statusCode >= 200 && response.statusCode < 300,
+    );
     if (successResponse) {
       assertions.push({ name: 'res.status', value: `eq ${successResponse.statusCode}` });
-      for (const field of successResponse.bodyFields.filter((entry) => entry.required).slice(0, 5)) {
+      for (const field of successResponse.bodyFields
+        .filter((entry) => entry.required)
+        .slice(0, 5)) {
         assertions.push({ name: `res.body.${field.name}`, value: 'exists' });
       }
     }
@@ -2051,7 +2191,10 @@ export class FeatureSliceManager {
     strictMode: boolean;
     targetResource: string;
   }): MatrixSpec[] {
-    const allowedFields = args.allowedFields && args.allowedFields.length > 0 ? args.allowedFields : ['name', 'email', 'description'];
+    const allowedFields =
+      args.allowedFields && args.allowedFields.length > 0
+        ? args.allowedFields
+        : ['name', 'email', 'description'];
     const basePayload = this.getBasePayload(args.targetResource, allowedFields);
     const title = titleCase(args.targetResource);
     const requiredField = allowedFields.includes('name') ? 'name' : allowedFields[0] || 'name';
@@ -2060,7 +2203,8 @@ export class FeatureSliceManager {
       : allowedFields.includes('code')
         ? 'code'
         : allowedFields[0] || 'name';
-    const invalidValue = invalidField === 'email' ? 'invalid-email' : invalidField === 'code' ? '***' : '';
+    const invalidValue =
+      invalidField === 'email' ? 'invalid-email' : invalidField === 'code' ? '***' : '';
     const securityField = allowedFields.includes('name') ? 'name' : allowedFields[0] || 'name';
     const injectionField = allowedFields.includes('description')
       ? 'description'
@@ -2089,7 +2233,17 @@ export class FeatureSliceManager {
           args.sliceId,
           `create-${slugify(title)}-validation-matrix`,
         ),
-        scenarioKeys: ['caseId', 'scenarioId', 'field', 'value', 'delta', 'expectedStatus', 'expectedOutcome', 'notes', 'tags'],
+        scenarioKeys: [
+          'caseId',
+          'scenarioId',
+          'field',
+          'value',
+          'delta',
+          'expectedStatus',
+          'expectedOutcome',
+          'notes',
+          'tags',
+        ],
         scenarios: [
           {
             caseId: `missing-${requiredField}`,
@@ -2133,7 +2287,17 @@ export class FeatureSliceManager {
           args.sliceId,
           `create-${slugify(title)}-security-matrix`,
         ),
-        scenarioKeys: ['caseId', 'scenarioId', 'field', 'value', 'delta', 'expectedStatus', 'expectedOutcome', 'notes', 'tags'],
+        scenarioKeys: [
+          'caseId',
+          'scenarioId',
+          'field',
+          'value',
+          'delta',
+          'expectedStatus',
+          'expectedOutcome',
+          'notes',
+          'tags',
+        ],
         scenarios: [
           {
             caseId: `xss-${securityField}`,
@@ -2162,10 +2326,12 @@ export class FeatureSliceManager {
 
   private buildCleanupPolicy(featureFolderRoot: string, targetResource: string): CleanupTruth {
     return {
-      notes: 'If the product does not expose hard delete, keep cleanup status truthful and avoid fake passing cleanup requests.',
+      notes:
+        'If the product does not expose hard delete, keep cleanup status truthful and avoid fake passing cleanup requests.',
       reason: 'Cleanup depends on delete support and correct fixture ownership.',
       requestPath: `${featureFolderRoot.replace(/^Features\//, 'Support/Cleanup/')}/cleanup-${slugify(targetResource)}.bru`,
-      requiredCondition: 'A resource id must be resolved and the product must support deletion for the created fixture.',
+      requiredCondition:
+        'A resource id must be resolved and the product must support deletion for the created fixture.',
       status: 'conditional',
     };
   }
@@ -2252,7 +2418,9 @@ export class FeatureSliceManager {
         : 'Support dependencies: none',
       `Source of truth: ${plan.sourceOfTruth || 'not specified'}`,
       `Cleanup truth: ${plan.cleanupPolicy.status} - ${plan.cleanupPolicy.reason}`,
-      plan.overlayDetails ? `Overlay: ${plan.overlayDetails.id} - ${plan.overlayDetails.description}` : '',
+      plan.overlayDetails
+        ? `Overlay: ${plan.overlayDetails.id} - ${plan.overlayDetails.description}`
+        : '',
       plan.overlay ? `Overlay: ${plan.overlay}` : '',
     ]
       .filter((line) => line.length > 0)
@@ -2283,7 +2451,10 @@ export class FeatureSliceManager {
     };
 
     if (request.body?.type === 'json') {
-      patch.preRequestScript = this.buildDynamicDataPreRequestScript(plan.targetResource, dynamicData);
+      patch.preRequestScript = this.buildDynamicDataPreRequestScript(
+        plan.targetResource,
+        dynamicData,
+      );
     }
 
     if (request.authStrategy === 'explicit-support-var') {
@@ -2300,7 +2471,7 @@ export class FeatureSliceManager {
         `  email: bru.getVar('${plan.targetResource}Email'),`,
         `  description: 'negative case',`,
         '};',
-        "delete payload.name;",
+        'delete payload.name;',
         "req.setHeader('Content-Type', 'application/json');",
         'req.setBody(payload);',
       ].join('\n');
@@ -2330,12 +2501,16 @@ export class FeatureSliceManager {
     request: CoreRequestSpec,
   ): Array<{ name: string; value: string }> {
     const operation = contract.operations.find(
-      (entry) => entry.method === request.method && this.getNormalizedOperationAction(entry) === request.action,
+      (entry) =>
+        entry.method === request.method &&
+        this.getNormalizedOperationAction(entry) === request.action,
     );
     return operation ? this.getContractAssertions(operation) : [];
   }
 
-  private getNormalizedOperationAction(operation: ControllerOperationContract): CoreRequestSpec['action'] {
+  private getNormalizedOperationAction(
+    operation: ControllerOperationContract,
+  ): CoreRequestSpec['action'] {
     switch (operation.action) {
       case 'create':
       case 'delete':
@@ -2362,10 +2537,12 @@ export class FeatureSliceManager {
     ].join('\n');
   }
 
-  private buildMatrixPreRequestScript(basePayload: Record<string, string | number | boolean | null>): string {
+  private buildMatrixPreRequestScript(
+    basePayload: Record<string, string | number | boolean | null>,
+  ): string {
     return [
       `const basePayload = ${JSON.stringify(basePayload, null, 2)};`,
-      'const splitPath = (path) => String(path).split(\'.\').filter(Boolean);',
+      "const splitPath = (path) => String(path).split('.').filter(Boolean);",
       'const setAtPath = (target, path, value) => {',
       '  const segments = splitPath(path);',
       '  let current = target;',
@@ -2392,7 +2569,7 @@ export class FeatureSliceManager {
       '  }',
       '};',
       'const row = bru.runner.iterationData.get() || {};',
-      "const caseId = row.caseId || row.scenarioId;",
+      'const caseId = row.caseId || row.scenarioId;',
       "if (!caseId) { throw new Error('Strict matrix row is missing caseId/scenarioId'); }",
       "if (row.expectedStatus === undefined) { throw new Error('Strict matrix row is missing expectedStatus'); }",
       "if (!row.expectedOutcome) { throw new Error('Strict matrix row is missing expectedOutcome'); }",
@@ -2408,7 +2585,7 @@ export class FeatureSliceManager {
       "bru.setVar('expectedOutcome', String(row.expectedOutcome));",
       "bru.setVar('matrixBasePayload', JSON.stringify(basePayload));",
       "bru.setVar('matrixMode', 'strict');",
-      "// Scenario deltas are managed by the MCP and should not silently fall back inside this request.",
+      '// Scenario deltas are managed by the MCP and should not silently fall back inside this request.',
     ].join('\n');
   }
 
@@ -2443,7 +2620,10 @@ export class FeatureSliceManager {
     scenarios: MatrixScenarioDelta[],
   ): void {
     if (scenarios.length === 0) {
-      throw new BrunoError('Strict matrix mode requires at least one scenario row', 'VALIDATION_ERROR');
+      throw new BrunoError(
+        'Strict matrix mode requires at least one scenario row',
+        'VALIDATION_ERROR',
+      );
     }
 
     for (const scenario of scenarios) {
@@ -2563,7 +2743,9 @@ export class FeatureSliceManager {
 
     if (mode === 'faker') {
       const profile = policy.fakerProfile || 'simple';
-      const uniqueEmail = faker.internet.email({ provider: 'example.test' }).replace('@', `+${suffix}@`);
+      const uniqueEmail = faker.internet
+        .email({ provider: 'example.test' })
+        .replace('@', `+${suffix}@`);
       const uniqueName =
         profile === 'commerce'
           ? `${faker.commerce.productName()} ${suffix}`
@@ -2601,7 +2783,10 @@ export class FeatureSliceManager {
   }
 
   private generateSuffix(): string {
-    return new Date().toISOString().replace(/[^0-9]/g, '').slice(-12);
+    return new Date()
+      .toISOString()
+      .replace(/[^0-9]/g, '')
+      .slice(-12);
   }
 
   private async applySliceFolderDefaults(plan: FeatureSlicePlan): Promise<void> {
@@ -2635,7 +2820,9 @@ export class FeatureSliceManager {
       `Category: ${folder.split('/').pop() || folder}`,
       `Strict mode: ${plan.strictMode}`,
       `Cleanup truth: ${plan.cleanupPolicy.status} - ${plan.cleanupPolicy.reason}`,
-      plan.overlayDetails ? `Overlay: ${plan.overlayDetails.id} - ${plan.overlayDetails.description}` : '',
+      plan.overlayDetails
+        ? `Overlay: ${plan.overlayDetails.id} - ${plan.overlayDetails.description}`
+        : '',
     ]
       .filter((line) => line.length > 0)
       .join('\n');
@@ -2676,7 +2863,10 @@ export class FeatureSliceManager {
     }
   }
 
-  private getContractRequiredInputs(contract: ControllerContract, targetResource: string): string[] {
+  private getContractRequiredInputs(
+    contract: ControllerContract,
+    targetResource: string,
+  ): string[] {
     const values: string[] = [];
     for (const operation of contract.operations) {
       for (const parameter of operation.parameters) {
@@ -2689,15 +2879,23 @@ export class FeatureSliceManager {
   }
 
   private getContractBodyFieldNames(contract: ControllerContract): string[] {
-    const fields = contract.operations.flatMap((operation) => operation.requestBody?.fields.map((field) => field.name) || []);
+    const fields = contract.operations.flatMap(
+      (operation) => operation.requestBody?.fields.map((field) => field.name) || [],
+    );
     return dedupe(fields).filter((field) => field.length > 0);
   }
 
   private getExpectedStatusFromContract(operation: ControllerOperationContract): number {
-    return operation.responses.find((response) => response.statusCode >= 200 && response.statusCode < 300)?.statusCode || 200;
+    return (
+      operation.responses.find(
+        (response) => response.statusCode >= 200 && response.statusCode < 300,
+      )?.statusCode || 200
+    );
   }
 
-  private getCategoryFromAction(action: ControllerOperationContract['action']): CoreRequestSpec['category'] {
+  private getCategoryFromAction(
+    action: ControllerOperationContract['action'],
+  ): CoreRequestSpec['category'] {
     switch (action) {
       case 'get':
       case 'list':
@@ -2709,7 +2907,10 @@ export class FeatureSliceManager {
     }
   }
 
-  private getFolderForContractAction(featureFolderRoot: string, action: ControllerOperationContract['action']): string {
+  private getFolderForContractAction(
+    featureFolderRoot: string,
+    action: ControllerOperationContract['action'],
+  ): string {
     switch (action) {
       case 'get':
       case 'list':
@@ -2732,11 +2933,17 @@ export class FeatureSliceManager {
       case 'delete':
         return `Delete ${title}`;
       default:
-        return operation.summary || operation.operationId || `${title} ${titleCase(operation.method.toLowerCase())}`;
+        return (
+          operation.summary ||
+          operation.operationId ||
+          `${title} ${titleCase(operation.method.toLowerCase())}`
+        );
     }
   }
 
-  private getSupportRolesForOperation(operation: ControllerOperationContract): SupportRequestRole[] {
+  private getSupportRolesForOperation(
+    operation: ControllerOperationContract,
+  ): SupportRequestRole[] {
     const roles: SupportRequestRole[] = [];
     if (operation.authRequired) {
       roles.push('auth');
@@ -2822,14 +3029,22 @@ export class FeatureSliceManager {
     sliceId: string,
     requestName: string,
   ): string {
-    return join(this.getMetadataRoot(collectionPath, sliceId), 'matrices', `${slugify(requestName)}.json`);
+    return join(
+      this.getMetadataRoot(collectionPath, sliceId),
+      'matrices',
+      `${slugify(requestName)}.json`,
+    );
   }
 
   private getFindingsPath(collectionPath: string, sliceId: string): string {
     return join(this.getMetadataRoot(collectionPath, sliceId), 'FINDINGS.md');
   }
 
-  private getScenarioFilePath(collectionPath: string, sliceId: string, requestName: string): string {
+  private getScenarioFilePath(
+    collectionPath: string,
+    sliceId: string,
+    requestName: string,
+  ): string {
     return join(
       this.getMetadataRoot(collectionPath, sliceId),
       'scenarios',
@@ -2868,7 +3083,11 @@ export class FeatureSliceManager {
     supportGraph: FeatureSliceSupportGraph,
   ): Promise<string> {
     const now = new Date().toISOString();
-    const runManifestPath = await this.writeRunManifest(plan.collectionPath, plan.sliceId, runManifest);
+    const runManifestPath = await this.writeRunManifest(
+      plan.collectionPath,
+      plan.sliceId,
+      runManifest,
+    );
     const manifest: SliceManifest = {
       cleanupPolicy: plan.cleanupPolicy,
       collectionPath: plan.collectionPath,
@@ -2920,7 +3139,10 @@ export class FeatureSliceManager {
     await fs.writeFile(generatedDataPath, `${JSON.stringify(bundle, null, 2)}\n`);
   }
 
-  private async readManifest(collectionPath: string, sliceId: string): Promise<SliceManifest | null> {
+  private async readManifest(
+    collectionPath: string,
+    sliceId: string,
+  ): Promise<SliceManifest | null> {
     try {
       const content = await fs.readFile(this.getManifestPath(collectionPath, sliceId), 'utf8');
       return JSON.parse(content) as SliceManifest;
@@ -2964,7 +3186,9 @@ export class FeatureSliceManager {
             `## ${finding.title}`,
             `- Kind: ${finding.kind}`,
             `- Severity: ${finding.severity}`,
-            finding.requestPath ? `- Request: ${relative(collectionPath, finding.requestPath)}` : '',
+            finding.requestPath
+              ? `- Request: ${relative(collectionPath, finding.requestPath)}`
+              : '',
             finding.expectedBehavior ? `- Expected: ${finding.expectedBehavior}` : '',
             finding.observedBehavior ? `- Observed: ${finding.observedBehavior}` : '',
             finding.recommendedAction ? `- Action: ${finding.recommendedAction}` : '',
@@ -3061,7 +3285,11 @@ export class FeatureSliceManager {
       evidence: result.error || result.stderr || result.stdout,
       failureReason:
         result.failureReason ||
-        ({ code: 'unknown_failure', message: result.error || 'Unknown failure', source: 'runner' } as FeatureRunFailureReason),
+        ({
+          code: 'unknown_failure',
+          message: result.error || 'Unknown failure',
+          source: 'runner',
+        } as FeatureRunFailureReason),
       phase: result.phase,
       requestPath: result.requestPath,
       title: result.name,
@@ -3087,7 +3315,8 @@ export class FeatureSliceManager {
         if (!requestPath) {
           continue;
         }
-      const phase: FeatureRunPhase = support.role === 'auth' ? 'auth' : support.role === 'cleanup' ? 'cleanup' : 'support';
+        const phase: FeatureRunPhase =
+          support.role === 'auth' ? 'auth' : support.role === 'cleanup' ? 'cleanup' : 'support';
         steps.push({
           order: order,
           cleanupPolicyStatus: support.role === 'cleanup' ? plan.cleanupPolicy.status : undefined,
@@ -3170,7 +3399,10 @@ export class FeatureSliceManager {
         order: order,
         continueOnFailure: true,
         dataFilePath: entry.dataFilePath,
-        expected: { statusCodes: [400], outcome: matrix.category === 'security' ? 'security_rejection' : 'validation_error' },
+        expected: {
+          statusCodes: [400],
+          outcome: matrix.category === 'security' ? 'security_rejection' : 'validation_error',
+        },
         failurePolicy: {
           classifyAs: 'product',
           continueOnFailure: true,
@@ -3179,7 +3411,8 @@ export class FeatureSliceManager {
         id: `${order++}`,
         name: matrix.requestName,
         phase,
-        profileMembership: phase === 'security' ? ['full', 'security_only'] : ['full', 'negative_only'],
+        profileMembership:
+          phase === 'security' ? ['full', 'security_only'] : ['full', 'negative_only'],
         requestPath: entry.requestPath,
         stopOnFailure: false,
       });
@@ -3247,8 +3480,22 @@ export class FeatureSliceManager {
     }
 
     const reportFilePath = join(tmpdir(), `bruno-slice-${slugify(step.name)}-${Date.now()}.json`);
-    const bruCommand = join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'bru.cmd' : 'bru');
-    const args = ['run', step.requestPath, '--env', step.env || input.env, '--output', reportFilePath, '--format', 'json'];
+    const bruCommand = join(
+      process.cwd(),
+      'node_modules',
+      '.bin',
+      process.platform === 'win32' ? 'bru.cmd' : 'bru',
+    );
+    const args = [
+      'run',
+      step.requestPath,
+      '--env',
+      step.env || input.env,
+      '--output',
+      reportFilePath,
+      '--format',
+      'json',
+    ];
     if (step.dataFilePath) {
       args.push('--json-file-path', step.dataFilePath);
     }
@@ -3260,26 +3507,28 @@ export class FeatureSliceManager {
     }
 
     const startedAt = Date.now();
-    const spawned = await new Promise<{ exitCode: number; stderr: string; stdout: string }>((resolve, reject) => {
-      const child = spawn(bruCommand, args, {
-        cwd: input.collectionPath,
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
+    const spawned = await new Promise<{ exitCode: number; stderr: string; stdout: string }>(
+      (resolve, reject) => {
+        const child = spawn(bruCommand, args, {
+          cwd: input.collectionPath,
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
 
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (chunk) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on('data', (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on('error', reject);
-      child.on('close', (exitCode) => {
-        resolve({ exitCode: exitCode ?? 1, stderr, stdout });
-      });
-    });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (exitCode) => {
+          resolve({ exitCode: exitCode ?? 1, stderr, stdout });
+        });
+      },
+    );
 
     const durationMs = Date.now() - startedAt;
     const parsed = await this.readBruJsonReport(reportFilePath);
@@ -3287,10 +3536,16 @@ export class FeatureSliceManager {
     const summary = this.getBruRunSummary(parsed);
     const failureReason = passed ? undefined : this.determineRunFailureReason(step, parsed);
     return {
-      classification: passed ? this.classifyPassedStep(step) : this.classifyFailureReason(step, failureReason),
+      classification: passed
+        ? this.classifyPassedStep(step)
+        : this.classifyFailureReason(step, failureReason),
       dataFilePath: step.dataFilePath,
       durationMs,
-      error: failureReason?.message || this.extractReportError(parsed) || this.extractPrimaryFailureMessage(parsed) || undefined,
+      error:
+        failureReason?.message ||
+        this.extractReportError(parsed) ||
+        this.extractPrimaryFailureMessage(parsed) ||
+        undefined,
       exitCode: spawned.exitCode,
       failureReason,
       name: step.name,
@@ -3303,7 +3558,11 @@ export class FeatureSliceManager {
   }
 
   private classifyPassedStep(step: FeatureRunStep): FeatureRunStepResult['classification'] {
-    return step.phase === 'cleanup' ? 'cleanup' : step.phase === 'auth' || step.phase === 'support' ? 'setup-failure' : 'product-defect';
+    return step.phase === 'cleanup'
+      ? 'cleanup'
+      : step.phase === 'auth' || step.phase === 'support'
+        ? 'setup-failure'
+        : 'product-defect';
   }
 
   private async readBruJsonReport(reportFilePath: string): Promise<BrunoIterationResult[]> {
@@ -3338,18 +3597,28 @@ export class FeatureSliceManager {
   }
 
   private extractReportError(report: BrunoIterationResult[]): string | null {
-    return this.flattenBruResults(report).find((result) => typeof result.error === 'string')?.error || null;
+    return (
+      this.flattenBruResults(report).find((result) => typeof result.error === 'string')?.error ||
+      null
+    );
   }
 
   private extractPrimaryFailureMessage(report: BrunoIterationResult[]): string | null {
     for (const result of this.flattenBruResults(report)) {
-      const scriptError = [...(result.preRequestTestResults || []), ...(result.postResponseTestResults || []), ...(result.testResults || [])].find(
-        (entry) => entry.isScriptError || entry.status === 'fail' || typeof entry.error === 'string',
+      const scriptError = [
+        ...(result.preRequestTestResults || []),
+        ...(result.postResponseTestResults || []),
+        ...(result.testResults || []),
+      ].find(
+        (entry) =>
+          entry.isScriptError || entry.status === 'fail' || typeof entry.error === 'string',
       );
       if (scriptError?.error) {
         return scriptError.error;
       }
-      const failedAssertion = (result.assertionResults || []).find((entry) => entry.status === 'fail' || typeof entry.error === 'string');
+      const failedAssertion = (result.assertionResults || []).find(
+        (entry) => entry.status === 'fail' || typeof entry.error === 'string',
+      );
       if (failedAssertion?.error) {
         return failedAssertion.error;
       }
@@ -3381,7 +3650,9 @@ export class FeatureSliceManager {
     }
 
     for (const result of this.flattenBruResults(report)) {
-      const preScriptError = (result.preRequestTestResults || []).find((entry) => entry.isScriptError);
+      const preScriptError = (result.preRequestTestResults || []).find(
+        (entry) => entry.isScriptError,
+      );
       if (preScriptError?.error) {
         return {
           brunoStatus: result.status,
@@ -3392,7 +3663,9 @@ export class FeatureSliceManager {
           source: 'pre_request',
         };
       }
-      const preFailure = (result.preRequestTestResults || []).find((entry) => entry.status === 'fail');
+      const preFailure = (result.preRequestTestResults || []).find(
+        (entry) => entry.status === 'fail',
+      );
       if (preFailure?.error || preFailure?.name) {
         return {
           brunoStatus: result.status,
@@ -3403,7 +3676,9 @@ export class FeatureSliceManager {
           source: 'pre_request',
         };
       }
-      const assertionFailure = (result.assertionResults || []).find((entry) => entry.status === 'fail' || entry.error);
+      const assertionFailure = (result.assertionResults || []).find(
+        (entry) => entry.status === 'fail' || entry.error,
+      );
       if (assertionFailure) {
         return {
           actualStatusCode: this.toNumericStatusCode(result.response?.status),
@@ -3416,7 +3691,9 @@ export class FeatureSliceManager {
           source: 'assertion',
         };
       }
-      const postScriptError = (result.postResponseTestResults || []).find((entry) => entry.isScriptError);
+      const postScriptError = (result.postResponseTestResults || []).find(
+        (entry) => entry.isScriptError,
+      );
       if (postScriptError?.error) {
         return {
           actualStatusCode: this.toNumericStatusCode(result.response?.status),
@@ -3428,7 +3705,9 @@ export class FeatureSliceManager {
           source: 'post_response',
         };
       }
-      const postFailure = (result.postResponseTestResults || []).find((entry) => entry.status === 'fail');
+      const postFailure = (result.postResponseTestResults || []).find(
+        (entry) => entry.status === 'fail',
+      );
       if (postFailure?.error || postFailure?.name) {
         return {
           actualStatusCode: this.toNumericStatusCode(result.response?.status),
@@ -3440,12 +3719,16 @@ export class FeatureSliceManager {
           source: 'post_response',
         };
       }
-      const testFailure = (result.testResults || []).find((entry) => entry.status === 'fail' || entry.error);
+      const testFailure = (result.testResults || []).find(
+        (entry) => entry.status === 'fail' || entry.error,
+      );
       if (testFailure) {
         return {
           actualStatusCode: this.toNumericStatusCode(result.response?.status),
           brunoStatus: result.status,
-          code: testFailure.isScriptError ? 'post_response_script_error' : 'post_response_test_failure',
+          code: testFailure.isScriptError
+            ? 'post_response_script_error'
+            : 'post_response_test_failure',
           message: testFailure.error || testFailure.name || 'Test failed',
           requestName: result.name,
           requestPath: result.path,
@@ -3496,7 +3779,13 @@ export class FeatureSliceManager {
     }
 
     const summary = this.getBruRunSummary(report);
-    if (summary && ((summary.failedRequests || 0) > 0 || (summary.errorRequests || 0) > 0 || (summary.failedAssertions || 0) > 0 || (summary.failedTests || 0) > 0)) {
+    if (
+      summary &&
+      ((summary.failedRequests || 0) > 0 ||
+        (summary.errorRequests || 0) > 0 ||
+        (summary.failedAssertions || 0) > 0 ||
+        (summary.failedTests || 0) > 0)
+    ) {
       return {
         code: 'bruno_summary_failure',
         expectedStatusCodes: step.expected?.statusCodes,
@@ -3525,10 +3814,18 @@ export class FeatureSliceManager {
     if (!reason) {
       return step.phase === 'auth' || step.phase === 'support' ? 'setup-failure' : 'product-defect';
     }
-    if (['missing_request_file', 'missing_data_file', 'post_response_script_error'].includes(reason.code)) {
+    if (
+      ['missing_request_file', 'missing_data_file', 'post_response_script_error'].includes(
+        reason.code,
+      )
+    ) {
       return 'collection-defect';
     }
-    if (['pre_request_script_error', 'pre_request_test_failure'].includes(reason.code) || step.phase === 'auth' || step.phase === 'support') {
+    if (
+      ['pre_request_script_error', 'pre_request_test_failure'].includes(reason.code) ||
+      step.phase === 'auth' ||
+      step.phase === 'support'
+    ) {
       return 'setup-failure';
     }
     return 'product-defect';

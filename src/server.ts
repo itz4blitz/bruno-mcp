@@ -31,12 +31,15 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types';
 import { promises as fs } from 'node:fs';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, delimiter, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
+import { ApiServiceType, createApiContractManager } from './bruno/api-contract.js';
 import { createCollectionManager } from './bruno/collection.js';
 import { createCollectionAuditManager } from './bruno/collection-audit.js';
+import { createContractCoverageManager, SeedManifestContract } from './bruno/contract-coverage.js';
+import { createContractSuiteScaffolder } from './bruno/contract-suite.js';
 import {
   createFeatureSliceManager,
   DynamicDataPolicy,
@@ -50,6 +53,8 @@ import {
 import { createBrunoNativeManager } from './bruno/native.js';
 import { createOpenApiContractManager } from './bruno/openapi.js';
 import { createRequestBuilder } from './bruno/request.js';
+import { BrunoRunInput, createBrunoRunner } from './bruno/runner.js';
+import { createVariableAuditManager } from './bruno/variable-audit.js';
 import { createWorkspaceManager } from './bruno/workspace.js';
 import {
   AddTestScriptInput,
@@ -58,6 +63,7 @@ import {
   CreateEnvironmentInput,
   CreateRequestInput,
   CreateTestSuiteInput,
+  FileOperationResult,
   HttpMethod,
   RequestAuthMode,
 } from './bruno/types.js';
@@ -68,6 +74,7 @@ const EMPTY_OBJECT_JSON_SCHEMA = { type: 'object' } as const;
 
 const METHOD_VALUES = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 const AUTH_VALUES = ['none', 'inherit', 'bearer', 'basic', 'oauth2', 'api-key', 'digest'] as const;
+const EXTRA_ROOTS_ENV = 'BRUNO_MCP_EXTRA_ROOTS';
 const BODY_VALUES = [
   'none',
   'json',
@@ -208,6 +215,75 @@ const collectionAuditToolSchema: ToolSchema = {
   requestPathPrefix: z.string().optional(),
 };
 
+const apiServiceTypeSchema = z.enum(['rest', 'odata', 'graphql', 'mixed']);
+
+const inspectApiContractToolSchema: ToolSchema = {
+  contractPath: z.string().min(1).optional(),
+  contractUrl: z.string().url().optional(),
+  serviceType: apiServiceTypeSchema.optional(),
+};
+
+const generateContractCoverageManifestToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  contractPath: z.string().min(1).optional(),
+  contractUrl: z.string().url().optional(),
+  seedManifestPath: z.string().min(1).optional(),
+  serviceType: apiServiceTypeSchema.optional(),
+};
+
+const validateContractCoverageManifestToolSchema: ToolSchema = {
+  manifestPath: z.string().min(1, 'Manifest path is required'),
+};
+
+const auditVariableSourcesToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+};
+
+const runCollectionToolSchema: ToolSchema = {
+  bail: z.boolean().optional(),
+  cacert: z.string().optional(),
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  csvFilePath: z.string().optional(),
+  delay: z.number().int().nonnegative().optional(),
+  disableCookies: z.boolean().optional(),
+  dryRun: z.boolean().optional(),
+  env: z.string().optional(),
+  envFile: z.string().optional(),
+  envVars: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  excludeTags: z.array(z.string()).optional(),
+  globalEnv: z.string().optional(),
+  insecure: z.boolean().optional(),
+  iterationCount: z.number().int().positive().optional(),
+  jsonFilePath: z.string().optional(),
+  noProxy: z.boolean().optional(),
+  parallel: z.boolean().optional(),
+  recursive: z.boolean().optional(),
+  reporterHtml: z.string().optional(),
+  reporterJson: z.string().optional(),
+  reporterJunit: z.string().optional(),
+  sandbox: z.enum(['safe', 'developer']).optional(),
+  tags: z.array(z.string()).optional(),
+  targets: z.array(z.string()).optional(),
+  testsOnly: z.boolean().optional(),
+  workspacePath: z.string().optional(),
+};
+
+const scaffoldApiContractSuiteToolSchema: ToolSchema = {
+  auth: requestAuthSchema.optional(),
+  baseUrl: z.string().optional(),
+  baseUrlVariable: z.string().optional(),
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  contractPath: z.string().min(1).optional(),
+  contractUrl: z.string().url().optional(),
+  environmentName: z.string().optional(),
+  environmentVariables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  includeNegative: z.boolean().optional(),
+  includeODataMatrix: z.boolean().optional(),
+  rootFolder: z.string().optional(),
+  seedManifestPath: z.string().min(1).optional(),
+  serviceType: apiServiceTypeSchema.optional(),
+};
+
 const workspaceToolSchema: ToolSchema = {
   workspacePath: z.string().min(1, 'Workspace path is required'),
 };
@@ -301,6 +377,25 @@ const updateEnvironmentToolSchema: ToolSchema = {
   variables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
   set: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
   unset: z.array(z.string()).optional(),
+};
+
+const desktopEnvironmentToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  environmentName: z.string().min(1, 'Environment name is required'),
+  variables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  mirrorToCollectionVars: z.boolean().optional(),
+};
+
+const hydrateODataSeedEnvironmentToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  environmentName: z.string().min(1, 'Environment name is required'),
+  baseUrl: z.string().url('Base URL must be an absolute URL'),
+  openApiPath: z.string().min(1).optional(),
+  openApiUrl: z.string().url().optional(),
+  staticVariables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  mirrorToCollectionVars: z.boolean().optional(),
+  expandTop: z.number().int().min(1).max(250).optional(),
+  downloadableFileDescription: z.string().optional(),
 };
 
 const workspaceEnvironmentToolSchema: ToolSchema = {
@@ -451,13 +546,18 @@ const runFeatureSliceToolSchema: ToolSchema = {
 };
 
 export class BrunoMcpServer {
+  private apiContractManager;
   private server: McpServer;
   private collectionAuditManager;
   private collectionManager;
+  private contractCoverageManager;
+  private contractSuiteScaffolder;
   private featureSliceManager;
   private nativeManager;
   private openApiContractManager;
   private requestBuilder;
+  private runner;
+  private variableAuditManager;
   private workspaceManager;
   private taskStore: InMemoryTaskStore;
   private rootCache?: { paths: string[]; timestamp: number };
@@ -499,10 +599,20 @@ export class BrunoMcpServer {
     );
 
     this.collectionManager = createCollectionManager();
+    this.apiContractManager = createApiContractManager();
     this.nativeManager = createBrunoNativeManager();
     this.collectionAuditManager = createCollectionAuditManager(this.nativeManager);
-    this.openApiContractManager = createOpenApiContractManager();
+    this.contractCoverageManager = createContractCoverageManager();
     this.requestBuilder = createRequestBuilder();
+    this.runner = createBrunoRunner();
+    this.variableAuditManager = createVariableAuditManager(this.nativeManager);
+    this.contractSuiteScaffolder = createContractSuiteScaffolder(
+      this.requestBuilder,
+      this.nativeManager,
+      this.contractCoverageManager,
+      this.variableAuditManager,
+    );
+    this.openApiContractManager = createOpenApiContractManager();
     this.workspaceManager = createWorkspaceManager();
     this.featureSliceManager = createFeatureSliceManager(
       this.nativeManager,
@@ -526,11 +636,15 @@ export class BrunoMcpServer {
     this.setupListCollectionsTool();
     this.setupGetCollectionStatsTool();
     this.setupCollectionAuditTool();
+    this.setupContractCoverageTools();
+    this.setupApiContractSuiteTool();
+    this.setupRunCollectionTool();
     this.setupWorkspaceTools();
     this.setupCollectionDefaultsTools();
     this.setupFolderTools();
     this.setupRequestCrudTools();
     this.setupEnvironmentCrudTools();
+    this.setupDesktopEnvironmentTools();
     this.setupFeatureSliceTools();
     this.setupResources();
     this.setupPrompts();
@@ -915,6 +1029,190 @@ export class BrunoMcpServer {
         },
       },
       auditTaskHandler,
+    );
+  }
+
+  private setupContractCoverageTools(): void {
+    this.server.registerTool(
+      'inspect_api_contract',
+      {
+        title: 'Inspect API Contract',
+        description:
+          'Parse a generic OpenAPI contract into a normalized REST/OData/GraphQL-over-HTTP contract model.',
+        inputSchema: inspectApiContractToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            contractPath?: string;
+            contractUrl?: string;
+            serviceType?: ApiServiceType;
+          };
+          const contract = await this.loadApiContractFromArgs(args);
+          return this.jsonResult(contract);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('inspecting API contract', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'generate_contract_coverage_manifest',
+      {
+        title: 'Generate Contract Coverage Manifest',
+        description:
+          'Generate a generic endpoint/query/payload/response/seed coverage denominator manifest from an OpenAPI/OData/GraphQL-over-HTTP contract.',
+        inputSchema: generateContractCoverageManifestToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            collectionPath: string;
+            contractPath?: string;
+            contractUrl?: string;
+            seedManifestPath?: string;
+            serviceType?: ApiServiceType;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const contract = await this.loadApiContractFromArgs(args);
+          const seedManifest = args.seedManifestPath
+            ? await this.loadSeedManifest(args.seedManifestPath)
+            : undefined;
+          const manifest = this.contractCoverageManager.buildManifest(contract, seedManifest);
+          const manifestPath = await this.contractCoverageManager.writeManifest(
+            args.collectionPath,
+            manifest,
+          );
+
+          return this.jsonResult({
+            manifest,
+            manifestPath,
+            validation: this.contractCoverageManager.validateManifest(manifest),
+          });
+        } catch (error) {
+          return this.errorResult(
+            this.getErrorMessage('generating contract coverage manifest', error),
+          );
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'validate_contract_coverage_manifest',
+      {
+        title: 'Validate Contract Coverage Manifest',
+        description:
+          'Validate a generated generic contract coverage denominator manifest for duplicate and malformed items.',
+        inputSchema: validateContractCoverageManifestToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { manifestPath: string };
+          await this.assertPathAllowed(args.manifestPath, 'Coverage manifest path');
+          const manifest = await this.contractCoverageManager.readManifest(args.manifestPath);
+          return this.jsonResult(this.contractCoverageManager.validateManifest(manifest));
+        } catch (error) {
+          return this.errorResult(
+            this.getErrorMessage('validating contract coverage manifest', error),
+          );
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'audit_variable_sources',
+      {
+        title: 'Audit Variable Sources',
+        description:
+          'Audit Bruno template variables and classify Desktop-ready, runtime-only, process, secret, prompt, OAuth2, and missing sources.',
+        inputSchema: auditVariableSourcesToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { collectionPath: string };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          return this.jsonResult(
+            await this.variableAuditManager.auditCollection(args.collectionPath),
+          );
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('auditing variable sources', error));
+        }
+      },
+    );
+  }
+
+  private setupApiContractSuiteTool(): void {
+    this.server.registerTool(
+      'scaffold_api_contract_suite',
+      {
+        title: 'Scaffold API Contract Suite',
+        description:
+          'Generate a Desktop-ready Bruno REST/OData suite from an API contract, including environments, variables, positive/negative requests, OData matrix requests, and coverage mapping.',
+        inputSchema: scaffoldApiContractSuiteToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            auth?: { config?: Record<string, string>; type: RequestAuthMode };
+            baseUrl?: string;
+            baseUrlVariable?: string;
+            collectionPath: string;
+            contractPath?: string;
+            contractUrl?: string;
+            environmentName?: string;
+            environmentVariables?: Record<string, boolean | number | string>;
+            includeNegative?: boolean;
+            includeODataMatrix?: boolean;
+            rootFolder?: string;
+            seedManifestPath?: string;
+            serviceType?: ApiServiceType;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const contract = await this.loadApiContractFromArgs(args);
+          const seedManifest = args.seedManifestPath
+            ? await this.loadSeedManifest(args.seedManifestPath)
+            : undefined;
+          const result = await this.contractSuiteScaffolder.scaffold({
+            auth: args.auth,
+            baseUrl: args.baseUrl,
+            baseUrlVariable: args.baseUrlVariable,
+            collectionPath: args.collectionPath,
+            contract,
+            environmentName: args.environmentName,
+            environmentVariables: args.environmentVariables,
+            includeNegative: args.includeNegative,
+            includeODataMatrix: args.includeODataMatrix,
+            rootFolder: args.rootFolder,
+            seedManifest,
+          });
+
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('scaffolding API contract suite', error));
+        }
+      },
+    );
+  }
+
+  private setupRunCollectionTool(): void {
+    this.server.registerTool(
+      'run_collection',
+      {
+        title: 'Run Bruno Collection',
+        description:
+          'Run a Bruno collection, folder, or request with documented CLI options, or return the command in dry-run mode.',
+        inputSchema: runCollectionToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as BrunoRunInput;
+          await this.assertRunCollectionInputAllowed(args);
+          const result = await this.runner.runCollection(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('running Bruno collection', error));
+        }
+      },
     );
   }
 
@@ -1555,6 +1853,136 @@ export class BrunoMcpServer {
     );
   }
 
+  private setupDesktopEnvironmentTools(): void {
+    this.server.registerTool(
+      'configure_desktop_environment',
+      {
+        title: 'Configure Desktop Environment',
+        description:
+          'Create or update a Bruno environment and optionally mirror the same variables into collection-level pre-request vars so Bruno Desktop can resolve common variables even before an environment is selected.',
+        inputSchema: desktopEnvironmentToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            collectionPath: string;
+            environmentName: string;
+            mirrorToCollectionVars?: boolean;
+            variables?: Record<string, string | number | boolean>;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const variables = args.variables || {};
+          const environmentResult = await this.upsertEnvironment(
+            args.collectionPath,
+            args.environmentName,
+            variables,
+          );
+          if (!environmentResult.success) {
+            return this.errorResult(`Failed to configure environment: ${environmentResult.error}`);
+          }
+
+          let collectionDefaultsPath: string | undefined;
+          if (args.mirrorToCollectionVars !== false && Object.keys(variables).length > 0) {
+            const defaultsResult = await this.nativeManager.updateCollectionDefaults(
+              args.collectionPath,
+              { preRequestVars: variables },
+            );
+            if (!defaultsResult.success) {
+              return this.errorResult(
+                `Environment was updated, but collection variable mirroring failed: ${defaultsResult.error}`,
+              );
+            }
+            collectionDefaultsPath = defaultsResult.path as string | undefined;
+          }
+
+          return this.jsonResult({
+            collectionDefaultsPath,
+            collectionPath: args.collectionPath,
+            environmentName: args.environmentName,
+            environmentPath: environmentResult.path,
+            mirroredToCollectionVars: args.mirrorToCollectionVars !== false,
+            variableCount: Object.keys(variables).length,
+          });
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('configuring desktop environment', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'hydrate_odata_seed_environment',
+      {
+        title: 'Hydrate OData Seed Environment',
+        description:
+          'Resolve OData entity IDs and expansion IDs from a live API/OpenAPI contract and write them into a Bruno environment, with optional collection-level mirroring for Bruno Desktop direct-request usage.',
+        inputSchema: hydrateODataSeedEnvironmentToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            baseUrl: string;
+            collectionPath: string;
+            downloadableFileDescription?: string;
+            environmentName: string;
+            expandTop?: number;
+            mirrorToCollectionVars?: boolean;
+            openApiPath?: string;
+            openApiUrl?: string;
+            staticVariables?: Record<string, string | number | boolean>;
+          };
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          if (args.openApiPath) {
+            await this.assertPathAllowed(args.openApiPath, 'OpenAPI path');
+          }
+
+          const hydration = await this.resolveODataSeedVariables(args);
+          const variables = {
+            baseUrl: args.baseUrl.replace(/\/+$/, ''),
+            ...args.staticVariables,
+            ...hydration.variables,
+          };
+          const environmentResult = await this.upsertEnvironment(
+            args.collectionPath,
+            args.environmentName,
+            variables,
+          );
+          if (!environmentResult.success) {
+            return this.errorResult(`Failed to hydrate environment: ${environmentResult.error}`);
+          }
+
+          let collectionDefaultsPath: string | undefined;
+          if (args.mirrorToCollectionVars !== false) {
+            const defaultsResult = await this.nativeManager.updateCollectionDefaults(
+              args.collectionPath,
+              { preRequestVars: variables },
+            );
+            if (!defaultsResult.success) {
+              return this.errorResult(
+                `Environment was hydrated, but collection variable mirroring failed: ${defaultsResult.error}`,
+              );
+            }
+            collectionDefaultsPath = defaultsResult.path as string | undefined;
+          }
+
+          return this.jsonResult({
+            collectionDefaultsPath,
+            collectionPath: args.collectionPath,
+            entitySetCount: hydration.entitySetCount,
+            environmentName: args.environmentName,
+            environmentPath: environmentResult.path,
+            expansionCount: hydration.expansionCount,
+            missingEntitySets: hydration.missingEntitySets,
+            missingExpansions: hydration.missingExpansions,
+            mirroredToCollectionVars: args.mirrorToCollectionVars !== false,
+            variableCount: Object.keys(variables).length,
+          });
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('hydrating OData seed environment', error));
+        }
+      },
+    );
+  }
+
   private setupFeatureSliceTools(): void {
     const runFeatureSliceTaskHandler: ToolTaskHandler<typeof runFeatureSliceToolSchema> = {
       createTask: async (args, extra) => {
@@ -2050,13 +2478,23 @@ export class BrunoMcpServer {
             generations: [
               'classic collections',
               'REST',
+              'OpenAPI contract inspection',
+              'OData contract modeling',
+              'REST/OData contract suite scaffolding',
               'GraphQL over HTTP',
               'binary uploads',
+              'contract coverage manifests',
+              'variable source audits',
+              'bru run command execution',
               'collection quality audit',
               'feature slice planning',
               'feature slice scaffolding',
               'strict matrices',
             ],
+            protocolAdapters: {
+              implemented: ['REST/OpenAPI', 'OData over OpenAPI', 'GraphQL over HTTP requests'],
+              planned: ['GraphQL schema introspection', 'gRPC', 'WebSocket', 'SOAP/WSDL'],
+            },
             metadata: [
               'workspace',
               'collection defaults',
@@ -2730,15 +3168,378 @@ Prefer:
       }, 'res.getBody()');
   }
 
+  private async loadApiContractFromArgs(args: {
+    contractPath?: string;
+    contractUrl?: string;
+    serviceType?: ApiServiceType;
+  }) {
+    if (args.contractPath) {
+      await this.assertPathAllowed(args.contractPath, 'Contract path');
+      return this.apiContractManager.inspectFile(args.contractPath, {
+        serviceType: args.serviceType,
+      });
+    }
+
+    if (args.contractUrl) {
+      return this.apiContractManager.inspectUrl(args.contractUrl, {
+        serviceType: args.serviceType,
+      });
+    }
+
+    throw new Error('Either contractPath or contractUrl is required.');
+  }
+
+  private async loadSeedManifest(seedManifestPath: string): Promise<SeedManifestContract> {
+    await this.assertPathAllowed(seedManifestPath, 'Seed manifest path');
+    const raw = await fs.readFile(seedManifestPath, 'utf8');
+    return JSON.parse(raw) as SeedManifestContract;
+  }
+
+  private async assertRunCollectionInputAllowed(input: BrunoRunInput): Promise<void> {
+    await this.assertPathAllowed(input.collectionPath, 'Collection path');
+
+    for (const [description, path] of [
+      ['Environment file path', input.envFile],
+      ['CSV data file path', input.csvFilePath],
+      ['JSON data file path', input.jsonFilePath],
+      ['HTML reporter path', input.reporterHtml],
+      ['JSON reporter path', input.reporterJson],
+      ['JUnit reporter path', input.reporterJunit],
+      ['Workspace path', input.workspacePath],
+      ['CA certificate path', input.cacert],
+    ] as Array<[string, string | undefined]>) {
+      if (path) {
+        await this.assertPathAllowed(path, description);
+      }
+    }
+  }
+
+  private async upsertEnvironment(
+    collectionPath: string,
+    environmentName: string,
+    variables: Record<string, string | number | boolean>,
+  ): Promise<FileOperationResult> {
+    const existingEnvironments = await this.nativeManager.listEnvironments(collectionPath);
+    if (existingEnvironments.includes(environmentName)) {
+      return this.nativeManager.updateEnvironmentVariables(
+        collectionPath,
+        environmentName,
+        variables,
+        [],
+      );
+    }
+
+    return this.nativeManager.createEnvironment(collectionPath, environmentName, variables);
+  }
+
+  private async resolveODataSeedVariables(args: {
+    baseUrl: string;
+    collectionPath: string;
+    downloadableFileDescription?: string;
+    environmentName: string;
+    expandTop?: number;
+    mirrorToCollectionVars?: boolean;
+    openApiPath?: string;
+    openApiUrl?: string;
+    staticVariables?: Record<string, string | number | boolean>;
+  }): Promise<{
+    entitySetCount: number;
+    expansionCount: number;
+    missingEntitySets: string[];
+    missingExpansions: string[];
+    variables: Record<string, string>;
+  }> {
+    const openApiDocument = await this.loadOpenApiDocumentForHydration(args);
+    const entitySets = this.extractODataEntitySets(openApiDocument);
+    const variables: Record<string, string> = {};
+    const missingEntitySets: string[] = [];
+    const missingExpansions: string[] = [];
+    let expansionCount = 0;
+
+    for (const entitySet of entitySets) {
+      let listBody: unknown;
+      try {
+        listBody = await this.fetchODataList(args.baseUrl, entitySet.path, {
+          $count: 'true',
+          $top: String(args.expandTop || 1),
+        });
+      } catch {
+        missingEntitySets.push(entitySet.name);
+        continue;
+      }
+
+      const firstRecord = this.firstODataRecord(listBody);
+      const id = this.extractODataRecordId(entitySet.name, firstRecord);
+      const variablePrefix = this.toBrunoVariableName(entitySet.name);
+
+      if (!id) {
+        missingEntitySets.push(entitySet.name);
+        continue;
+      }
+
+      variables[`${variablePrefix}_id`] = id;
+      variables[`${variablePrefix}_key`] = id;
+
+      let expansionVariables = this.extractODataExpansionVariables(entitySet.name, firstRecord);
+      if (entitySet.supportsExpand) {
+        const expandedBody = await this.fetchODataList(args.baseUrl, entitySet.path, {
+          $expand: '*',
+          $top: String(args.expandTop || 1),
+        }).catch(() => undefined);
+        expansionVariables = {
+          ...expansionVariables,
+          ...this.extractODataExpansionVariables(
+            entitySet.name,
+            this.firstODataRecord(expandedBody),
+          ),
+        };
+      }
+
+      Object.assign(variables, expansionVariables);
+      const expansionNames = Object.keys(expansionVariables).filter((name) => name.endsWith('_id'));
+      expansionCount += expansionNames.length;
+      if (entitySet.supportsExpand && expansionNames.length === 0) {
+        missingExpansions.push(entitySet.name);
+      }
+    }
+
+    return {
+      entitySetCount: entitySets.length,
+      expansionCount,
+      missingEntitySets,
+      missingExpansions,
+      variables,
+    };
+  }
+
+  private async loadOpenApiDocumentForHydration(args: {
+    baseUrl: string;
+    openApiPath?: string;
+    openApiUrl?: string;
+  }): Promise<Record<string, unknown>> {
+    if (args.openApiPath) {
+      const content = await fs.readFile(args.openApiPath, 'utf8');
+      return this.openApiContractManager.parseOpenApiDocument(content, args.openApiPath) as Record<
+        string,
+        unknown
+      >;
+    }
+
+    const openApiUrl = args.openApiUrl || `${args.baseUrl.replace(/\/+$/, '')}/openapi.json`;
+    const response = await fetch(openApiUrl, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch OpenAPI contract from ${openApiUrl}: ${response.status}`);
+    }
+
+    return this.openApiContractManager.parseOpenApiDocument(
+      await response.text(),
+      openApiUrl,
+    ) as Record<string, unknown>;
+  }
+
+  private extractODataEntitySets(
+    document: Record<string, unknown>,
+  ): Array<{ name: string; path: string; supportsExpand: boolean }> {
+    const paths =
+      document.paths && typeof document.paths === 'object'
+        ? (document.paths as Record<string, Record<string, unknown>>)
+        : {};
+    const entitySets = new Map<string, { name: string; path: string; supportsExpand: boolean }>();
+
+    for (const [path, pathItem] of Object.entries(paths)) {
+      const getOperation = pathItem.get || pathItem.GET;
+      if (!getOperation || typeof getOperation !== 'object') {
+        continue;
+      }
+      if (/[{}]/.test(path) || /\([^)]*\)/.test(path)) {
+        continue;
+      }
+
+      const segments = path.split('/').filter(Boolean);
+      const name = segments.at(-1);
+      if (!name || name.startsWith('$') || this.isNonEntityODataPath(name)) {
+        continue;
+      }
+
+      entitySets.set(name, {
+        name,
+        path,
+        supportsExpand: this.operationHasQueryParameter(getOperation, '$expand'),
+      });
+    }
+
+    return [...entitySets.values()].toSorted((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private isNonEntityODataPath(name: string): boolean {
+    return ['openapi.json', 'swagger', 'swagger-ui', 'metadata', '$metadata'].includes(
+      name.toLowerCase(),
+    );
+  }
+
+  private operationHasQueryParameter(operation: object, parameterName: string): boolean {
+    const parameters = (operation as { parameters?: unknown }).parameters;
+    if (!Array.isArray(parameters)) {
+      return false;
+    }
+
+    return parameters.some((parameter) => {
+      if (!parameter || typeof parameter !== 'object') {
+        return false;
+      }
+      const record = parameter as { in?: unknown; name?: unknown };
+      return record.in === 'query' && record.name === parameterName;
+    });
+  }
+
+  private async fetchODataList(
+    baseUrl: string,
+    path: string,
+    query: Record<string, string>,
+  ): Promise<unknown> {
+    const url = new URL(path.replace(/^\/+/, ''), `${baseUrl.replace(/\/+$/, '')}/`);
+    for (const [name, value] of Object.entries(query)) {
+      url.searchParams.set(name, value);
+    }
+
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch OData list ${url.toString()}: ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.toLowerCase().includes('json')) {
+      throw new Error(`OData list ${url.toString()} did not return JSON`);
+    }
+
+    return response.json();
+  }
+
+  private firstODataRecord(body: unknown): Record<string, unknown> | undefined {
+    if (!body || typeof body !== 'object') {
+      return undefined;
+    }
+
+    if (Array.isArray(body)) {
+      const first = body[0];
+      return first && typeof first === 'object' ? (first as Record<string, unknown>) : undefined;
+    }
+
+    const record = body as Record<string, unknown>;
+    if (Array.isArray(record.value)) {
+      const first = record.value[0];
+      return first && typeof first === 'object' ? (first as Record<string, unknown>) : undefined;
+    }
+
+    return undefined;
+  }
+
+  private extractODataRecordId(
+    entitySetName: string,
+    record: Record<string, unknown> | undefined,
+  ): string | undefined {
+    if (!record) {
+      return undefined;
+    }
+
+    const singularName = this.singularizeEntityName(entitySetName);
+    const candidateNames = [
+      'id',
+      'ID',
+      'Id',
+      `${singularName}Id`,
+      `${singularName}ID`,
+      `${entitySetName}Id`,
+      `${entitySetName}ID`,
+      'uuid',
+      'UUID',
+    ];
+    const lowerCaseLookup = new Map(
+      Object.entries(record).map(([key, value]) => [key.toLowerCase(), value]),
+    );
+
+    for (const candidateName of candidateNames) {
+      const value = lowerCaseLookup.get(candidateName.toLowerCase());
+      if (this.isUsableVariableValue(value)) {
+        return String(value);
+      }
+    }
+
+    return undefined;
+  }
+
+  private extractODataExpansionVariables(
+    entitySetName: string,
+    record: Record<string, unknown> | undefined,
+  ): Record<string, string> {
+    if (!record) {
+      return {};
+    }
+
+    const variables: Record<string, string> = {};
+    const entityVariableName = this.toBrunoVariableName(entitySetName);
+
+    for (const [fieldName, value] of Object.entries(record)) {
+      if (fieldName.startsWith('@')) {
+        continue;
+      }
+
+      const nestedRecord = Array.isArray(value) ? value[0] : value;
+      if (!nestedRecord || typeof nestedRecord !== 'object') {
+        continue;
+      }
+
+      const nestedId = this.extractODataRecordId(
+        fieldName,
+        nestedRecord as Record<string, unknown>,
+      );
+      if (!nestedId) {
+        continue;
+      }
+
+      const fieldVariableName = this.toBrunoVariableName(fieldName);
+      variables[`${entityVariableName}_${fieldVariableName}_id`] = nestedId;
+      if (!variables[`${entityVariableName}_expand`]) {
+        variables[`${entityVariableName}_expand`] = fieldName;
+      }
+    }
+
+    return variables;
+  }
+
+  private singularizeEntityName(name: string): string {
+    if (name.endsWith('ies') && name.length > 3) {
+      return `${name.slice(0, -3)}y`;
+    }
+    if (name.endsWith('ses') && name.length > 3) {
+      return name.slice(0, -2);
+    }
+    if (name.endsWith('s') && name.length > 1) {
+      return name.slice(0, -1);
+    }
+    return name;
+  }
+
+  private toBrunoVariableName(value: string): string {
+    const sanitized = value.replace(/[^A-Za-z0-9_.-]/g, '_');
+    return /^\d/.test(sanitized) ? `v_${sanitized}` : sanitized;
+  }
+
+  private isUsableVariableValue(value: unknown): boolean {
+    return ['boolean', 'number', 'string'].includes(typeof value) && String(value).length > 0;
+  }
+
   private async getAllowedRootPaths(): Promise<string[] | undefined> {
     const now = Date.now();
     if (this.rootCache && now - this.rootCache.timestamp < 1000) {
       return this.rootCache.paths;
     }
 
+    const extraRootPaths = this.getExtraRootPaths();
+
     try {
       const result = await this.server.server.listRoots();
-      const paths = result.roots
+      const clientRootPaths = result.roots
         .map((root) => {
           try {
             return fileURLToPath(root.uri);
@@ -2746,14 +3547,36 @@ Prefer:
             return undefined;
           }
         })
-        .filter((path): path is string => Boolean(path))
-        .map((path) => resolve(path));
+        .filter((path): path is string => Boolean(path));
+      const paths = this.normalizeRootPaths([...clientRootPaths, ...extraRootPaths]);
 
       this.rootCache = { paths, timestamp: now };
       return paths;
     } catch {
-      return undefined;
+      if (extraRootPaths.length === 0) {
+        return undefined;
+      }
+
+      const paths = this.normalizeRootPaths(extraRootPaths);
+      this.rootCache = { paths, timestamp: now };
+      return paths;
     }
+  }
+
+  private getExtraRootPaths(): string[] {
+    const rawValue = process.env[EXTRA_ROOTS_ENV];
+    if (!rawValue) {
+      return [];
+    }
+
+    return rawValue
+      .split(new RegExp(`[${delimiter},]`))
+      .map((path) => path.trim())
+      .filter((path) => path.length > 0);
+  }
+
+  private normalizeRootPaths(paths: string[]): string[] {
+    return Array.from(new Set(paths.map((path) => resolve(path))));
   }
 
   private async assertPathAllowed(path: string, description: string): Promise<void> {

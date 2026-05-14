@@ -59,7 +59,10 @@ test('FeatureSliceManager plans and scaffolds a strict feature slice', async () 
   assert.equal(scaffold.scenarioFiles.length, 2);
 
   const manifest = JSON.parse(
-    await readFile(join(collectionPath, '.bruno-mcp', 'feature-slices', 'users', 'slice.json'), 'utf8'),
+    await readFile(
+      join(collectionPath, '.bruno-mcp', 'feature-slices', 'users', 'slice.json'),
+      'utf8',
+    ),
   ) as {
     dynamicData: { generatedVars: Record<string, string>; uniqueEmail: string };
     overlayDetails: { id: string };
@@ -70,15 +73,23 @@ test('FeatureSliceManager plans and scaffolds a strict feature slice', async () 
   assert.equal(manifest.overlayDetails.id, 'raw-dto-overlay');
   assert.ok(manifest.dynamicData.generatedVars.generatedSuffix.length > 0);
 
-  const matrixScenario = JSON.parse(
-    await readFile(scaffold.scenarioFiles[0]!, 'utf8'),
-  ) as Array<{ expectedStatus: number; scenarioId: string }>;
+  const matrixScenario = JSON.parse(await readFile(scaffold.scenarioFiles[0]!, 'utf8')) as Array<{
+    expectedStatus: number;
+    scenarioId: string;
+  }>;
   assert.equal(Array.isArray(matrixScenario), true);
   assert.equal(matrixScenario[0]?.scenarioId, 'missing-name');
 
   const matrixMetadata = JSON.parse(
     await readFile(
-      join(collectionPath, '.bruno-mcp', 'feature-slices', 'users', 'matrices', 'create-user-validation-matrix.json'),
+      join(
+        collectionPath,
+        '.bruno-mcp',
+        'feature-slices',
+        'users',
+        'matrices',
+        'create-user-validation-matrix.json',
+      ),
       'utf8',
     ),
   ) as { scenarioFilePath: string; strategy: string };
@@ -100,7 +111,10 @@ test('FeatureSliceManager plans and scaffolds a strict feature slice', async () 
   assert.deepEqual(audit.collectionDefects, []);
 
   const artifactsManifest = JSON.parse(
-    await readFile(join(collectionPath, '.bruno-mcp', 'feature-slices', 'users', 'artifacts.json'), 'utf8'),
+    await readFile(
+      join(collectionPath, '.bruno-mcp', 'feature-slices', 'users', 'artifacts.json'),
+      'utf8',
+    ),
   ) as { artifactsManifestPath: string };
   assert.match(artifactsManifest.artifactsManifestPath, /artifacts\.json$/);
 });
@@ -124,7 +138,14 @@ test('FeatureSliceManager plans controller-aware Branch slice from OpenAPI contr
   });
   assert.equal(collectionResult.success, true);
 
-  const fixturePath = join(process.cwd(), 'tests', 'fixtures', 'contracts', 'branch', 'openapi.json');
+  const fixturePath = join(
+    process.cwd(),
+    'tests',
+    'fixtures',
+    'contracts',
+    'branch',
+    'openapi.json',
+  );
   const contracts = await openApiManager.ingestFile(fixturePath);
   const branchContract = contracts.find((contract) => contract.controllerName === 'Branch');
   assert.ok(branchContract);
@@ -160,23 +181,38 @@ test('FeatureSliceManager plans controller-aware Branch slice from OpenAPI contr
 
   const validationResult = await featureSliceManager.validateFeatureSlice(collectionPath, 'branch');
   assert.equal(validationResult.valid, true);
-  const validationSummary = await readFile(validationResult.artifacts.validationSummaryMarkdownPath, 'utf8');
+  const validationSummary = await readFile(
+    validationResult.artifacts.validationSummaryMarkdownPath,
+    'utf8',
+  );
   assert.match(validationSummary, /# Validation Summary/);
   assert.match(validationSummary, /branch/i);
 
   const artifactsManifest = JSON.parse(
-    await readFile(join(collectionPath, '.bruno-mcp', 'feature-slices', 'branch', 'artifacts.json'), 'utf8'),
+    await readFile(
+      join(collectionPath, '.bruno-mcp', 'feature-slices', 'branch', 'artifacts.json'),
+      'utf8',
+    ),
   ) as { lastValidation?: { valid: boolean; validationSummaryMarkdownPath?: string } };
   assert.equal(artifactsManifest.lastValidation?.valid, true);
-  assert.match(String(artifactsManifest.lastValidation?.validationSummaryMarkdownPath || ''), /validation-summary\.md$/);
+  assert.match(
+    String(artifactsManifest.lastValidation?.validationSummaryMarkdownPath || ''),
+    /validation-summary\.md$/,
+  );
 
-  const updateRequestPath = scaffold.createdRequests.find((requestPath) => requestPath.endsWith('/update-branch.bru'));
+  const updateRequestPath = scaffold.createdRequests.find((requestPath) =>
+    requestPath.endsWith('/update-branch.bru'),
+  );
   assert.ok(updateRequestPath);
   const updateRequest = await nativeManager.getRequest(updateRequestPath!);
   assert.ok(
     Array.isArray((updateRequest as { assertions?: Array<{ name: string }> }).assertions) &&
-      ((updateRequest as { assertions: Array<{ name: string }> }).assertions.some((assertion) => assertion.name === 'res.body.id') ||
-        (updateRequest as { assertions: Array<{ name: string }> }).assertions.some((assertion) => assertion.name === 'res.status')),
+      ((updateRequest as { assertions: Array<{ name: string }> }).assertions.some(
+        (assertion) => assertion.name === 'res.body.id',
+      ) ||
+        (updateRequest as { assertions: Array<{ name: string }> }).assertions.some(
+          (assertion) => assertion.name === 'res.status',
+        )),
   );
 });
 

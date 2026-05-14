@@ -414,7 +414,7 @@ export class RequestBuilder {
       }
     }
 
-    const queryBlock = this.getBlock(blocks, 'query');
+    const queryBlock = this.getBlock(blocks, 'params:query') || this.getBlock(blocks, 'query');
     if (queryBlock) {
       const query = this.parseKeyValueLines(queryBlock.content);
       if (Object.keys(query).length > 0) {

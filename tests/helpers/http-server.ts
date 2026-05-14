@@ -11,7 +11,10 @@ type RecordedRequest = {
 export async function createTestServer() {
   const requests: RecordedRequest[] = [];
   let nextUserId = 200;
-  const users = new Map<number, { description?: string; email?: string; id: number; name?: string }>();
+  const users = new Map<
+    number,
+    { description?: string; email?: string; id: number; name?: string }
+  >();
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const bodyBuffer = await readBody(req);
@@ -87,7 +90,10 @@ export async function createTestServer() {
           respondJson(res, 400, { error: 'Email is invalid' });
           return;
         }
-        if (payload.name.includes('<script>') || String(payload.description || '').includes(' OR 1=1')) {
+        if (
+          payload.name.includes('<script>') ||
+          String(payload.description || '').includes(' OR 1=1')
+        ) {
           respondJson(res, 400, { error: 'Security rejection' });
           return;
         }
@@ -111,7 +117,9 @@ export async function createTestServer() {
         const lookup = url.searchParams.get('lookup');
         const values = [...users.values()];
         if (lookup) {
-          const matched = values.find((user) => user.name?.includes(lookup) || user.email?.includes(lookup));
+          const matched = values.find(
+            (user) => user.name?.includes(lookup) || user.email?.includes(lookup),
+          );
           respondJson(res, 200, matched ? { data: { id: matched.id } } : { items: [] });
           return;
         }
@@ -148,7 +156,8 @@ export async function createTestServer() {
         const payload = body ? (JSON.parse(body) as Record<string, unknown>) : {};
         const updated = {
           ...existing,
-          description: typeof payload.description === 'string' ? payload.description : existing.description,
+          description:
+            typeof payload.description === 'string' ? payload.description : existing.description,
           email: typeof payload.email === 'string' ? payload.email : existing.email,
           name: typeof payload.name === 'string' ? payload.name : existing.name,
         };

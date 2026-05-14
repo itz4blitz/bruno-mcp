@@ -225,7 +225,7 @@ export class BruGenerator {
    * Generate query parameters block
    */
   private generateQueryBlock(query: BruQuery): string {
-    const lines = ['query {'];
+    const lines = ['params:query {'];
     Object.entries(query).forEach(([key, value]) => {
       lines.push(this.indent(`${key}: ${this.formatValue(value)}`));
     });

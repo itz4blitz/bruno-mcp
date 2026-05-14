@@ -37,7 +37,10 @@ export class BrunoEngineHttpError extends Error {
 }
 
 export class BrunoEngineProtocolError extends Error {
-  constructor(message: string, public readonly payload?: unknown) {
+  constructor(
+    message: string,
+    public readonly payload?: unknown,
+  ) {
     super(message);
     this.name = 'BrunoEngineProtocolError';
   }
@@ -85,15 +88,21 @@ export class BrunoEngineClient {
     return this.request('/engine/version', { method: 'GET' });
   }
 
-  inspectContract(input: EngineInspectContractRequest): Promise<{ contractPath: string; controllers: ControllerContract[] }> {
+  inspectContract(
+    input: EngineInspectContractRequest,
+  ): Promise<{ contractPath: string; controllers: ControllerContract[] }> {
     return this.request('/engine/inspect-contract', { body: input, method: 'POST' });
   }
 
-  plan(input: EnginePlanRequest): Promise<{ artifacts: FeatureSliceArtifactBundle; plan: FeatureSlicePlan }> {
+  plan(
+    input: EnginePlanRequest,
+  ): Promise<{ artifacts: FeatureSliceArtifactBundle; plan: FeatureSlicePlan }> {
     return this.request('/engine/plan', { body: input, method: 'POST' });
   }
 
-  scaffold(input: EngineScaffoldRequest): Promise<{ artifacts: FeatureSliceArtifactBundle; scaffold: unknown }> {
+  scaffold(
+    input: EngineScaffoldRequest,
+  ): Promise<{ artifacts: FeatureSliceArtifactBundle; scaffold: unknown }> {
     return this.request('/engine/scaffold', { body: input, method: 'POST' });
   }
 
@@ -101,27 +110,47 @@ export class BrunoEngineClient {
     return this.request('/engine/validate', { body: input, method: 'POST' });
   }
 
-  inspectRunManifest(input: EngineInspectSliceRequest): Promise<{ artifacts: FeatureSliceArtifactBundle; manifest: FeatureRunManifest }> {
+  inspectRunManifest(
+    input: EngineInspectSliceRequest,
+  ): Promise<{ artifacts: FeatureSliceArtifactBundle; manifest: FeatureRunManifest }> {
     return this.request('/engine/inspect-run-manifest', { body: input, method: 'POST' });
   }
 
-  validateRunManifest(input: EngineInspectSliceRequest): Promise<{ artifacts: FeatureSliceArtifactBundle; validation: FeatureRunManifestValidation }> {
+  validateRunManifest(
+    input: EngineInspectSliceRequest,
+  ): Promise<{ artifacts: FeatureSliceArtifactBundle; validation: FeatureRunManifestValidation }> {
     return this.request('/engine/validate-run-manifest', { body: input, method: 'POST' });
   }
 
-  inspectSupportGraph(input: EngineInspectSliceRequest): Promise<{ artifacts: FeatureSliceArtifactBundle; supportGraph: FeatureSliceSupportGraph }> {
+  inspectSupportGraph(
+    input: EngineInspectSliceRequest,
+  ): Promise<{ artifacts: FeatureSliceArtifactBundle; supportGraph: FeatureSliceSupportGraph }> {
     return this.request('/engine/inspect-support-graph', { body: input, method: 'POST' });
   }
 
-  run(input: EngineRunRequest): Promise<{ artifacts: FeatureSliceArtifactBundle; report: FeatureRunReport } | { artifacts: FeatureSliceArtifactBundle; jobId: string; pollUrl: string; state: string }> {
+  run(
+    input: EngineRunRequest,
+  ): Promise<
+    | { artifacts: FeatureSliceArtifactBundle; report: FeatureRunReport }
+    | { artifacts: FeatureSliceArtifactBundle; jobId: string; pollUrl: string; state: string }
+  > {
     return this.request('/engine/run', { body: input, method: 'POST' });
   }
 
-  pollRunStatus(jobId: string): Promise<{ artifacts: FeatureSliceArtifactBundle; error?: string; jobId: string; report?: FeatureRunReport; state: string }> {
+  pollRunStatus(jobId: string): Promise<{
+    artifacts: FeatureSliceArtifactBundle;
+    error?: string;
+    jobId: string;
+    report?: FeatureRunReport;
+    state: string;
+  }> {
     return this.request(`/engine/run-status?jobId=${encodeURIComponent(jobId)}`, { method: 'GET' });
   }
 
-  private async request<T>(path: string, init: { body?: unknown; method: 'GET' | 'POST' }): Promise<T> {
+  private async request<T>(
+    path: string,
+    init: { body?: unknown; method: 'GET' | 'POST' },
+  ): Promise<T> {
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       body: init.body ? JSON.stringify(init.body) : undefined,
       headers: this.buildHeaders(Boolean(init.body)),
@@ -143,10 +172,15 @@ export class BrunoEngineClient {
         'error' in payload &&
         (payload as { error?: unknown }).error === 'schema_version_mismatch'
       ) {
-        throw new BrunoEngineVersionMismatchError('Engine schema version mismatch', payload as EngineSchemaVersionMismatch);
+        throw new BrunoEngineVersionMismatchError(
+          'Engine schema version mismatch',
+          payload as EngineSchemaVersionMismatch,
+        );
       }
       throw new BrunoEngineHttpError(
-        typeof payload === 'object' && payload && 'error' in payload ? String((payload as { error: unknown }).error) : `HTTP ${response.status}`,
+        typeof payload === 'object' && payload && 'error' in payload
+          ? String((payload as { error: unknown }).error)
+          : `HTTP ${response.status}`,
         response.status,
         path,
         payload,

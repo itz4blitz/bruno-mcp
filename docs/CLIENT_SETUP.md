@@ -46,6 +46,28 @@ Example local MCP entry:
 
 Restart the client session after changing the tool surface.
 
+### Extra allowed roots
+
+When the MCP client advertises roots, `bruno-mcp` constrains file operations to those roots. For local multi-repo work where the server lives in one repo and Bruno collections live elsewhere, add extra trusted roots with `BRUNO_MCP_EXTRA_ROOTS`.
+
+Use the platform path delimiter or commas for multiple roots:
+
+```json
+{
+  "bruno-mcp": {
+    "type": "local",
+    "command": [
+      "/absolute/path/to/bruno-mcp/node_modules/.bin/tsx",
+      "/absolute/path/to/bruno-mcp/src/index.ts"
+    ],
+    "env": {
+      "BRUNO_MCP_EXTRA_ROOTS": "/absolute/path/to/api-project"
+    },
+    "enabled": true
+  }
+}
+```
+
 ## Claude Desktop / Claude Code
 
 Use stdio launch with Node against the built file or source runner.

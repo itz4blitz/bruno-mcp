@@ -33,7 +33,12 @@ test('engine HTTP JSON schema export includes route metadata and envelope fields
   assert.equal(schemas.version.path, '/engine/version');
   assert.equal(schemas.run.method, 'POST');
   assert.equal(schemas.runStatus.authRequired, true);
-  const definitions = (schemas.health.successEnvelope as { definitions?: Record<string, { properties?: Record<string, unknown>; type?: string }> }).definitions || {};
+  const definitions =
+    (
+      schemas.health.successEnvelope as {
+        definitions?: Record<string, { properties?: Record<string, unknown>; type?: string }>;
+      }
+    ).definitions || {};
   const root = definitions.healthSuccessEnvelope;
   assert.equal(root?.type, 'object');
   const properties = root?.properties || {};
@@ -47,7 +52,9 @@ test('engine HTTP JSON schema export includes route metadata and envelope fields
 });
 
 test('engine version endpoint matches package version contract', async () => {
-  const packageJson = JSON.parse(await readFile(join(process.cwd(), 'package.json'), 'utf8')) as { version: string };
+  const packageJson = JSON.parse(await readFile(join(process.cwd(), 'package.json'), 'utf8')) as {
+    version: string;
+  };
   const client = new BrunoEngineClient({
     baseUrl: 'http://engine.test',
     fetch: async () =>

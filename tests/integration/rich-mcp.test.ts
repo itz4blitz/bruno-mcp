@@ -95,6 +95,42 @@ docs: ''
   );
 });
 
+test('BRUNO_MCP_EXTRA_ROOTS augments client roots for local multi-repo workspaces', async (t) => {
+  const rootPath = await mkdtemp(join(tmpdir(), 'bruno-mcp-extra-roots-'));
+  const clientRootPath = join(rootPath, 'client-root');
+  const extraRootPath = join(rootPath, 'extra-root');
+  await mkdir(clientRootPath, { recursive: true });
+  await mkdir(extraRootPath, { recursive: true });
+
+  const session = await createMcpTestClient({
+    roots: [clientRootPath],
+    env: {
+      BRUNO_MCP_EXTRA_ROOTS: extraRootPath,
+    },
+  });
+  t.after(async () => {
+    await session.close();
+  });
+
+  await session.client.callTool({
+    name: 'create_collection',
+    arguments: {
+      name: 'extra-api',
+      outputPath: extraRootPath,
+    },
+  });
+
+  const stats = await session.client.callTool({
+    name: 'get_collection_stats',
+    arguments: {
+      collectionPath: join(extraRootPath, 'extra-api'),
+    },
+  });
+
+  assert.equal(Boolean('isError' in stats && stats.isError), false);
+  assert.match(JSON.stringify(stats), /extra-api/);
+});
+
 test('delete_folder can use elicitation to confirm recursive deletion', async (t) => {
   const rootPath = await mkdtemp(join(tmpdir(), 'bruno-mcp-elicit-'));
   const session = await createMcpTestClient({

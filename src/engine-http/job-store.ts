@@ -28,7 +28,10 @@ export interface EngineRunJobStore {
   getJob(jobId: string): Promise<EngineRunJobRecord | undefined>;
   markJobFailed(jobId: string, error: string): Promise<EngineRunJobRecord | undefined>;
   markJobRunning(jobId: string): Promise<EngineRunJobRecord | undefined>;
-  markJobSucceeded(jobId: string, report: FeatureRunReport): Promise<EngineRunJobRecord | undefined>;
+  markJobSucceeded(
+    jobId: string,
+    report: FeatureRunReport,
+  ): Promise<EngineRunJobRecord | undefined>;
 }
 
 export class InMemoryEngineRunJobStore implements EngineRunJobStore {
@@ -36,10 +39,14 @@ export class InMemoryEngineRunJobStore implements EngineRunJobStore {
 
   constructor(
     private readonly now: () => string = () => new Date().toISOString(),
-    private readonly createJobId: () => string = () => `job_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+    private readonly createJobId: () => string = () =>
+      `job_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
   ) {}
 
-  async createQueuedJob(input: { artifacts: FeatureSliceArtifactBundle; request: EngineRunRequest }): Promise<EngineRunJobRecord> {
+  async createQueuedJob(input: {
+    artifacts: FeatureSliceArtifactBundle;
+    request: EngineRunRequest;
+  }): Promise<EngineRunJobRecord> {
     const jobId = this.createJobId();
     const job: EngineRunJobRecord = {
       artifacts: input.artifacts,
@@ -58,7 +65,10 @@ export class InMemoryEngineRunJobStore implements EngineRunJobStore {
     return job;
   }
 
-  async findActiveJob(collectionPath: string, sliceId: string): Promise<EngineRunJobRecord | undefined> {
+  async findActiveJob(
+    collectionPath: string,
+    sliceId: string,
+  ): Promise<EngineRunJobRecord | undefined> {
     return [...this.jobs.values()].find(
       (job) =>
         (job.state === 'queued' || job.state === 'running') &&
@@ -81,7 +91,10 @@ export class InMemoryEngineRunJobStore implements EngineRunJobStore {
     return job;
   }
 
-  async markJobSucceeded(jobId: string, report: FeatureRunReport): Promise<EngineRunJobRecord | undefined> {
+  async markJobSucceeded(
+    jobId: string,
+    report: FeatureRunReport,
+  ): Promise<EngineRunJobRecord | undefined> {
     const job = this.jobs.get(jobId);
     if (!job) {
       return undefined;
@@ -117,12 +130,16 @@ export class JsonFileEngineRunJobStore implements EngineRunJobStore {
   private mutationQueue: Promise<unknown> = Promise.resolve();
 
   constructor(options: JsonFileEngineRunJobStoreOptions = {}) {
-    this.createJobId = options.createJobId || (() => `job_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    this.createJobId =
+      options.createJobId || (() => `job_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
     this.filePath = options.filePath || join(tmpdir(), 'bruno-mcp-engine-http', 'run-jobs.json');
     this.now = options.now || (() => new Date().toISOString());
   }
 
-  async createQueuedJob(input: { artifacts: FeatureSliceArtifactBundle; request: EngineRunRequest }): Promise<EngineRunJobRecord> {
+  async createQueuedJob(input: {
+    artifacts: FeatureSliceArtifactBundle;
+    request: EngineRunRequest;
+  }): Promise<EngineRunJobRecord> {
     return this.mutateJobs((jobs) => {
       const jobId = this.createJobId();
       const job: EngineRunJobRecord = {
@@ -143,7 +160,10 @@ export class JsonFileEngineRunJobStore implements EngineRunJobStore {
     });
   }
 
-  async findActiveJob(collectionPath: string, sliceId: string): Promise<EngineRunJobRecord | undefined> {
+  async findActiveJob(
+    collectionPath: string,
+    sliceId: string,
+  ): Promise<EngineRunJobRecord | undefined> {
     const jobs = await this.readJobs();
     return Object.values(jobs).find(
       (job) =>
@@ -170,7 +190,10 @@ export class JsonFileEngineRunJobStore implements EngineRunJobStore {
     });
   }
 
-  async markJobSucceeded(jobId: string, report: FeatureRunReport): Promise<EngineRunJobRecord | undefined> {
+  async markJobSucceeded(
+    jobId: string,
+    report: FeatureRunReport,
+  ): Promise<EngineRunJobRecord | undefined> {
     return this.mutateJobs((jobs) => {
       const job = jobs[jobId];
       if (!job) {
@@ -196,7 +219,9 @@ export class JsonFileEngineRunJobStore implements EngineRunJobStore {
     });
   }
 
-  private async mutateJobs<T>(mutator: (jobs: Record<string, EngineRunJobRecord>) => T | Promise<T>): Promise<T> {
+  private async mutateJobs<T>(
+    mutator: (jobs: Record<string, EngineRunJobRecord>) => T | Promise<T>,
+  ): Promise<T> {
     const next = this.mutationQueue.then(async () => {
       const jobs = await this.readJobs();
       const result = await mutator(jobs);
@@ -204,13 +229,19 @@ export class JsonFileEngineRunJobStore implements EngineRunJobStore {
       await fs.writeFile(this.filePath, `${JSON.stringify(jobs, null, 2)}\n`);
       return result;
     });
-    this.mutationQueue = next.then(() => undefined, () => undefined);
+    this.mutationQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
     return next;
   }
 
   private async readJobs(): Promise<Record<string, EngineRunJobRecord>> {
     try {
-      return JSON.parse(await fs.readFile(this.filePath, 'utf8')) as Record<string, EngineRunJobRecord>;
+      return JSON.parse(await fs.readFile(this.filePath, 'utf8')) as Record<
+        string,
+        EngineRunJobRecord
+      >;
     } catch {
       return {};
     }

@@ -78,7 +78,7 @@ docs: ''
   const createResult = await workspaceManager.createWorkspaceEnvironment(workspacePath, 'SIT', {
     apiToken: 'abc123',
     baseUrl: 'http://localhost:8080',
-    tenantId: 85,
+    workspaceId: 85,
   });
   assert.equal(createResult.success, true);
 
@@ -89,7 +89,7 @@ docs: ''
   assert.deepEqual(env, {
     apiToken: 'abc123',
     baseUrl: 'http://localhost:8080',
-    tenantId: '85',
+    workspaceId: '85',
   });
 
   const updateResult = await workspaceManager.updateWorkspaceEnvironment(
@@ -103,7 +103,7 @@ docs: ''
   const updated = await workspaceManager.getWorkspaceEnvironment(workspacePath, 'SIT');
   assert.deepEqual(updated, {
     baseUrl: 'http://localhost:9090',
-    tenantId: '85',
+    workspaceId: '85',
   });
 
   const deleteResult = await workspaceManager.deleteWorkspaceEnvironment(workspacePath, 'SIT');

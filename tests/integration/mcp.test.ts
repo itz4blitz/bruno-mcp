@@ -8,6 +8,135 @@ import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import { callToolText, createMcpTestClient } from '../helpers/mcp-client.js';
 
+const sampleMixedApiContract = {
+  openapi: '3.0.0',
+  info: {
+    title: 'Sample Products API',
+    version: '1.0.0',
+  },
+  paths: {
+    '/': {
+      get: {
+        responses: { '200': { description: 'service root' } },
+      },
+    },
+    '/$metadata': {
+      get: {
+        responses: { '200': { description: 'metadata' } },
+      },
+    },
+    '/openapi.json': {
+      get: {
+        responses: { '200': { description: 'OpenAPI document' } },
+      },
+    },
+    '/Products': {
+      get: {
+        parameters: [
+          { in: 'query', name: '$select', schema: { type: 'string' } },
+          { in: 'query', name: '$filter', schema: { type: 'string' } },
+          { in: 'query', name: '$orderby', schema: { type: 'string' } },
+          { in: 'query', name: '$top', schema: { type: 'integer' } },
+          { in: 'query', name: '$skip', schema: { type: 'integer' } },
+          { in: 'query', name: '$count', schema: { type: 'boolean' } },
+          { in: 'query', name: '$expand', schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': {
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ProductCollection' },
+              },
+            },
+          },
+        },
+      },
+      post: {
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ProductCreate' },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Product' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/Products/{ProductId}': {
+      get: {
+        parameters: [{ in: 'path', name: 'ProductId', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': {
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Product' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/Files/upload': {
+      post: {
+        requestBody: {
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['file'],
+                properties: {
+                  file: { type: 'string', format: 'binary' },
+                },
+              },
+            },
+          },
+        },
+        responses: { '204': { description: 'uploaded' } },
+      },
+    },
+  },
+  components: {
+    schemas: {
+      ProductCollection: {
+        type: 'object',
+        properties: {
+          value: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Product' },
+          },
+        },
+      },
+      Product: {
+        type: 'object',
+        required: ['ProductId', 'name'],
+        properties: {
+          ProductId: { type: 'string' },
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          price: { type: 'number', minimum: 0, maximum: 1000 },
+        },
+      },
+      ProductCreate: {
+        type: 'object',
+        required: ['name', 'price'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+          price: { type: 'number', minimum: 0, maximum: 1000 },
+          description: { type: 'string', maxLength: 500 },
+        },
+      },
+    },
+  },
+};
+
 test('MCP server exposes working Bruno collection tools over stdio', async (t) => {
   const rootPath = await mkdtemp(join(tmpdir(), 'bruno-mcp-integration-'));
   const session = await createMcpTestClient();
@@ -55,7 +184,7 @@ test('MCP server exposes working Bruno collection tools over stdio', async (t) =
     collectionPath,
     environmentName: 'empty',
     variables: {
-      tenantId: 85,
+      workspaceId: 85,
     },
   });
   assert.match(updateEnvironmentAliasText, /Updated environment/);
@@ -66,7 +195,7 @@ test('MCP server exposes working Bruno collection tools over stdio', async (t) =
       environmentName: 'empty',
     }),
   ) as { variables: Record<string, string> };
-  assert.deepEqual(updatedAliasEnvironment.variables, { tenantId: '85' });
+  assert.deepEqual(updatedAliasEnvironment.variables, { workspaceId: '85' });
 
   const requestText = await callToolText(session.client, 'create_request', {
     collectionPath,
@@ -357,4 +486,185 @@ test('MCP server supports task-based audit execution and cancellation', async (t
   assert.equal(cancelledState.status, 'cancelled');
 
   await cancellableStream.return(undefined);
+});
+
+test('MCP server exposes generic contract coverage, variable audit, and run tools', async (t) => {
+  const rootPath = await mkdtemp(join(tmpdir(), 'bruno-mcp-contract-tools-'));
+  const session = await createMcpTestClient();
+  t.after(async () => {
+    await session.close();
+  });
+
+  await callToolText(session.client, 'create_collection', {
+    name: 'sample-products-api',
+    outputPath: rootPath,
+  });
+  const collectionPath = join(rootPath, 'sample-products-api');
+
+  const contractPath = join(rootPath, 'sample-openapi.json');
+  await writeFile(contractPath, `${JSON.stringify(sampleMixedApiContract, null, 2)}\n`);
+
+  const seedManifestPath = join(rootPath, 'seed-manifest.json');
+  await writeFile(
+    seedManifestPath,
+    `${JSON.stringify(
+      {
+        variables: {
+          Products_id: { source: 'api-resolver' },
+          Products_expand: { required: false, source: 'api-resolver' },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  const inspected = JSON.parse(
+    await callToolText(session.client, 'inspect_api_contract', {
+      contractPath,
+      serviceType: 'mixed',
+    }),
+  ) as {
+    endpoints: Array<{ id: string }>;
+    odata?: { entitySets: Array<{ keyEndpointId?: string; queryOptions: string[] }> };
+    source: { title?: string };
+  };
+  assert.equal(inspected.source.title, 'Sample Products API');
+  assert.ok(inspected.endpoints.some((endpoint) => endpoint.id === 'GET /Products'));
+  assert.equal(inspected.odata?.entitySets[0]?.keyEndpointId, 'GET /Products/{ProductId}');
+  assert.ok(inspected.odata?.entitySets[0]?.queryOptions.includes('$expand'));
+
+  const generatedCoverage = JSON.parse(
+    await callToolText(session.client, 'generate_contract_coverage_manifest', {
+      collectionPath,
+      contractPath,
+      seedManifestPath,
+      serviceType: 'mixed',
+    }),
+  ) as {
+    manifest: { items: Array<{ category: string; id: string }> };
+    manifestPath: string;
+    validation: { valid: boolean };
+  };
+  assert.equal(generatedCoverage.validation.valid, true);
+  assert.ok(
+    generatedCoverage.manifest.items.some((item) => item.id === 'odata-query:products:expand'),
+  );
+  assert.ok(generatedCoverage.manifest.items.some((item) => item.category === 'file-route'));
+  assert.ok(
+    generatedCoverage.manifest.items.some((item) => item.id === 'seed-variable:products-id'),
+  );
+
+  const validation = JSON.parse(
+    await callToolText(session.client, 'validate_contract_coverage_manifest', {
+      manifestPath: generatedCoverage.manifestPath,
+    }),
+  ) as { valid: boolean };
+  assert.equal(validation.valid, true);
+
+  await callToolText(session.client, 'create_collection', {
+    name: 'sample-products-suite-api',
+    outputPath: rootPath,
+  });
+  const suiteCollectionPath = join(rootPath, 'sample-products-suite-api');
+  const suite = JSON.parse(
+    await callToolText(session.client, 'scaffold_api_contract_suite', {
+      baseUrl: 'http://127.0.0.1:3000',
+      collectionPath: suiteCollectionPath,
+      contractPath,
+      environmentName: 'local',
+      environmentVariables: {
+        Products_id: 'seed-product-1',
+        uploadFilePath: './fixtures/upload.bin',
+      },
+      seedManifestPath,
+      serviceType: 'mixed',
+    }),
+  ) as {
+    coverageManifest: { items: Array<{ required: boolean; status: string }> };
+    createdRequests: Array<{ name: string; scenario: string }>;
+    environment: { variables: Record<string, string> };
+    variableAudit: { summary: { missingReferences: number } };
+  };
+  assert.equal(suite.environment.variables.baseUrl, 'http://127.0.0.1:3000');
+  assert.equal(suite.environment.variables.Products_id, 'seed-product-1');
+  assert.equal(suite.variableAudit.summary.missingReferences, 0);
+  assert.ok(suite.createdRequests.some((request) => request.name === 'Products $filter'));
+  assert.ok(suite.createdRequests.some((request) => request.scenario === 'missing-required:name'));
+  assert.ok(suite.createdRequests.some((request) => request.scenario === 'unsupported-method'));
+  assert.deepEqual(
+    suite.coverageManifest.items.filter((item) => item.required && item.status === 'uncovered'),
+    [],
+  );
+
+  await callToolText(session.client, 'create_environment', {
+    collectionPath,
+    name: 'local',
+    variables: {
+      baseUrl: 'http://127.0.0.1:3000',
+      Products_id: 'seed-product-1',
+    },
+  });
+
+  await callToolText(session.client, 'update_collection_defaults', {
+    collectionPath,
+    preRequestVars: {
+      authToken: 'collection-token',
+    },
+  });
+
+  await callToolText(session.client, 'create_request', {
+    collectionPath,
+    headers: {
+      Authorization: 'Bearer {{authToken}}',
+      'X-Missing': '{{missingVar}}',
+      'X-Process': "{{process.env['API_TOKEN']}}",
+      'X-Prompt': '{{?API token}}',
+      'X-Runtime': '{{runtimeOnly}}',
+    },
+    method: 'GET',
+    name: 'Fetch Product By Seed',
+    url: '{{baseUrl}}/Products/{{Products_id}}',
+  });
+
+  await callToolText(session.client, 'update_request', {
+    requestPath: join(collectionPath, 'fetch-product-by-seed.bru'),
+    postResponseScript: "bru.setVar('runtimeOnly', 'resolved-during-run');",
+  });
+
+  const variableAudit = JSON.parse(
+    await callToolText(session.client, 'audit_variable_sources', {
+      collectionPath,
+    }),
+  ) as {
+    references: Array<{ directRequestReady: boolean; name: string; sourceTypes: string[] }>;
+    summary: { missingReferences: number; uniqueMissingVariables: string[] };
+  };
+  assert.deepEqual(variableAudit.summary.uniqueMissingVariables, ['missingVar']);
+  assert.equal(variableAudit.summary.missingReferences, 1);
+
+  const references = new Map(
+    variableAudit.references.map((reference) => [reference.name, reference]),
+  );
+  assert.ok(references.get('baseUrl')?.sourceTypes.includes('environment'));
+  assert.ok(references.get('Products_id')?.sourceTypes.includes('environment'));
+  assert.ok(references.get('authToken')?.sourceTypes.includes('collection'));
+  assert.deepEqual(references.get('runtimeOnly')?.sourceTypes, ['runtime']);
+  assert.equal(references.get('runtimeOnly')?.directRequestReady, false);
+  assert.deepEqual(references.get('API_TOKEN')?.sourceTypes, ['process-env']);
+  assert.deepEqual(references.get('API token')?.sourceTypes, ['prompt']);
+
+  const runCommand = JSON.parse(
+    await callToolText(session.client, 'run_collection', {
+      collectionPath,
+      dryRun: true,
+      env: 'local',
+      reporterJson: join(rootPath, 'report.json'),
+      tags: ['contract'],
+    }),
+  ) as { args: string[]; dryRun: boolean };
+  assert.equal(runCommand.dryRun, true);
+  assert.deepEqual(runCommand.args.slice(0, 3), ['run', '--env', 'local']);
+  assert.ok(runCommand.args.includes('--reporter-json'));
+  assert.ok(runCommand.args.includes('--tags'));
 });

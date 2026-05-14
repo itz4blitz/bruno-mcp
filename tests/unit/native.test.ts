@@ -23,7 +23,7 @@ test('BrunoNativeManager manages collection defaults, folder defaults, requests,
 
   const defaultsResult = await nativeManager.updateCollectionDefaults(collectionPath, {
     headers: { Accept: 'application/json' },
-    preRequestVars: { tenantId: 85 },
+    preRequestVars: { workspaceId: 85 },
     preRequestScript: "console.log('collection pre');",
   });
   assert.equal(defaultsResult.success, true);
@@ -93,21 +93,21 @@ test('BrunoNativeManager manages collection defaults, folder defaults, requests,
 
   const createEnvironmentResult = await nativeManager.createEnvironment(collectionPath, 'Local', {
     baseUrl: 'http://localhost:8080',
-    tenantId: 85,
+    workspaceId: 85,
   });
   assert.equal(createEnvironmentResult.success, true);
 
   const environment = await nativeManager.getEnvironment(collectionPath, 'Local');
   assert.deepEqual(environment, {
     baseUrl: 'http://localhost:8080',
-    tenantId: '85',
+    workspaceId: '85',
   });
 
   const updateEnvironmentResult = await nativeManager.updateEnvironmentVariables(
     collectionPath,
     'Local',
     { apiToken: 'abc123' },
-    ['tenantId'],
+    ['workspaceId'],
   );
   assert.equal(updateEnvironmentResult.success, true);
 
@@ -146,12 +146,12 @@ bundled: false
   const nativeManager = createBrunoNativeManager();
 
   const folderResult = await nativeManager.createFolder(collectionPath, 'users', {
-    preRequestVars: { tenantId: 85 },
+    preRequestVars: { workspaceId: 85 },
   });
   assert.equal(folderResult.success, true);
 
   const folderContent = await readFile(join(collectionPath, 'users', 'folder.yml'), 'utf8');
-  assert.match(folderContent, /tenantId/);
+  assert.match(folderContent, /workspaceId/);
 
   const environmentResult = await nativeManager.createEnvironment(collectionPath, 'Local', {
     baseUrl: 'http://localhost:8080',
