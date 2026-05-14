@@ -11,7 +11,7 @@ import type {
   CreateTaskRequestHandlerExtra,
   ToolTaskHandler,
   TaskRequestHandlerExtra,
-} from '@modelcontextprotocol/sdk/experimental/tasks/interfaces';
+} from '@modelcontextprotocol/sdk/experimental/tasks/interfaces.js';
 import {
   getObjectShape,
   getSchemaDescription,
@@ -21,7 +21,7 @@ import {
   type AnySchema,
 } from '@modelcontextprotocol/sdk/server/zod-compat.js';
 import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   ErrorCode,
   ListPromptsRequestSchema,
@@ -29,7 +29,7 @@ import {
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   McpError,
-} from '@modelcontextprotocol/sdk/types';
+} from '@modelcontextprotocol/sdk/types.js';
 import { promises as fs } from 'node:fs';
 import { basename, delimiter, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
