@@ -50,6 +50,7 @@ This project is an independent file-native Bruno automation implementation built
 - dependency-aware suite generation using runtime vars
 - CRUD request scaffolding
 - Bruno CLI run command generation/execution
+- Bruno JSON/JUnit run-report ingestion and contract coverage reconciliation
 - CSV/JSON runner data-file authoring with run manifests
 - strict assertion/operator and request-settings validation
 - Bruno auth mode support for none, inherit, bearer, basic, OAuth2, API key, digest, AWS SigV4, NTLM, and WSSE
@@ -110,7 +111,7 @@ Statuses describe the generic MCP surface. Product-specific oracles still belong
 | Roots enforcement                                                         | Implemented                              |
 | Logging / progress                                                        | Implemented                              |
 | Elicitation                                                               | Implemented                              |
-| Run-report ingestion into coverage manifests                              | Planned / next                           |
+| Run-report ingestion into coverage manifests                              | Implemented for Bruno JSON/JUnit         |
 | Data-file authoring and iteration manifest support                        | Implemented                              |
 | Strict assertion/operator validation                                      | Implemented                              |
 | Request settings validation                                               | Implemented                              |
@@ -163,6 +164,7 @@ Runtime-only values still have to come from a run or resolver request. Bruno Des
 - `inspect_api_contract`
 - `generate_contract_coverage_manifest`
 - `validate_contract_coverage_manifest`
+- `reconcile_contract_coverage_report`
 - `scaffold_api_contract_suite`
 - `audit_variable_sources`
 - `run_collection`
@@ -474,7 +476,6 @@ npm run verify
 
 High-value next steps that are not blockers for current use:
 
-- run-report ingestion and reconciliation into coverage manifests
 - run-report artifact ingestion and masking audits
 - external secret-manager mapping audits
 - GraphQL schema introspection coverage

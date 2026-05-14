@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -16,6 +16,12 @@ test('RunnerDataManager authors JSON data files and run manifests', async () => 
   assert.equal(collection.success, true);
 
   const manager = createRunnerDataManager();
+  await mkdir(join(collection.path as string, 'users'), { recursive: true });
+  await writeFile(
+    join(collection.path as string, 'users/create-user.bru'),
+    'meta {\n  name: create-user\n}\n',
+  );
+
   const result = await manager.createDataFile({
     collectionPath: collection.path as string,
     filePath: 'runner-data/users.json',
@@ -92,4 +98,118 @@ test('RunnerDataManager validates CSV field completeness', async () => {
   assert.match(csv, /"A, B"/);
   assert.match(csv, /"Line\nBreak"/);
   assert.match(result.runCommand, /--csv-file-path runner-data\/users\.csv/);
+});
+
+test('RunnerDataManager validates manifests against collection files', async () => {
+  const rootPath = await mkdtemp(join(tmpdir(), 'bruno-runner-data-'));
+  const collection = await createCollectionManager().createCollection({
+    name: 'runner-data-manifest-api',
+    outputPath: rootPath,
+  });
+  assert.equal(collection.success, true);
+
+  const collectionPath = collection.path as string;
+  await mkdir(join(collectionPath, 'users'), { recursive: true });
+  await writeFile(
+    join(collectionPath, 'users/create-user.bru'),
+    'meta {\n  name: create-user\n}\n',
+  );
+  await mkdir(join(collectionPath, 'runner-data'), { recursive: true });
+  await writeFile(
+    join(collectionPath, 'runner-data/users.json'),
+    `${JSON.stringify(
+      [
+        { email: 'min@example.com', name: 'Min' },
+        { email: 'max@example.com', name: '' },
+      ],
+      null,
+      2,
+    )}\n`,
+  );
+
+  const manifestPath = join(collectionPath, 'runner-data/run-manifest.json');
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        collectionPath,
+        dataFiles: [
+          {
+            commandOption: '--json-file-path',
+            fields: ['email'],
+            format: 'json',
+            path: 'runner-data/users.json',
+            requestPaths: ['users/create-user.bru'],
+            requiredFields: ['email', 'name'],
+            rowCount: 1,
+          },
+          {
+            commandOption: '--json-file-path',
+            fields: ['email'],
+            format: 'csv',
+            path: 'runner-data/missing.csv',
+            requestPaths: ['users/missing.bru'],
+            requiredFields: ['accountId'],
+            rowCount: 1,
+          },
+          {
+            commandOption: '--json-file-path',
+            fields: ['email'],
+            format: 'json',
+            path: '../escaped.json',
+            requestPaths: ['../escaped.bru'],
+            requiredFields: [],
+            rowCount: 1,
+          },
+        ],
+        version: 1,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  const validation = await createRunnerDataManager().validateManifest(manifestPath);
+  assert.equal(validation.valid, false);
+
+  const errors = validation.errors.join('\n');
+  assert.match(errors, /dataFiles\[0\]\.rowCount must match actual row count 2\./);
+  assert.match(errors, /dataFiles\[0\]\.fields must match actual fields: email, name\./);
+  assert.match(errors, /dataFiles\[0\]\.requiredFields\[1\] "name" is empty in row 2\./);
+  assert.match(
+    errors,
+    /dataFiles\[1\]\.commandOption must be --csv-file-path for csv data files\./,
+  );
+  assert.match(errors, /dataFiles\[1\]\.path does not exist/);
+  assert.match(errors, /dataFiles\[1\]\.requestPaths\[0\] does not exist/);
+  assert.match(
+    errors,
+    /dataFiles\[1\]\.requiredFields\[0\] "accountId" is not present in fields\./,
+  );
+  assert.match(errors, /dataFiles\[2\]\.path escapes collection root/);
+  assert.match(errors, /dataFiles\[2\]\.requestPaths\[0\] escapes collection root/);
+});
+
+test('RunnerDataManager reports missing manifest collection roots without throwing', async () => {
+  const rootPath = await mkdtemp(join(tmpdir(), 'bruno-runner-data-'));
+  const manifestPath = join(rootPath, 'run-manifest.json');
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        collectionPath: join(rootPath, 'missing-collection'),
+        dataFiles: [],
+        version: 1,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  const validation = await createRunnerDataManager().validateManifest(manifestPath);
+  assert.equal(validation.valid, false);
+  assert.match(
+    validation.errors.join('\n'),
+    /Manifest collectionPath does not load as a Bruno collection/,
+  );
 });

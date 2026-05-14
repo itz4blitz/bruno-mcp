@@ -77,6 +77,7 @@ export * from './engine-http/schema.js';
 export * from './bruno/openapi.js';
 export * from './bruno/request.js';
 export * from './bruno/request-validation.js';
+export * from './bruno/run-report.js';
 export * from './bruno/runner-data.js';
 export * from './bruno/secrets.js';
 export * from './bruno/converters.js';

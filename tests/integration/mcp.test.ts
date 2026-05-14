@@ -582,7 +582,8 @@ test('MCP server exposes generic contract coverage, variable audit, and run tool
     }),
   ) as {
     coverageManifest: { items: Array<{ required: boolean; status: string }> };
-    createdRequests: Array<{ name: string; scenario: string }>;
+    coverageManifestPath: string;
+    createdRequests: Array<{ name: string; relativePath: string; scenario: string }>;
     environment: { variables: Record<string, string> };
     variableAudit: { summary: { missingReferences: number } };
   };
@@ -596,6 +597,70 @@ test('MCP server exposes generic contract coverage, variable audit, and run tool
     suite.coverageManifest.items.filter((item) => item.required && item.status === 'uncovered'),
     [],
   );
+
+  const passedRuntimeRequest = suite.createdRequests.find(
+    (request) => request.name === 'Products $filter',
+  );
+  const failedRuntimeRequest = suite.createdRequests.find(
+    (request) => request.scenario === 'missing-required:name',
+  );
+  assert.ok(passedRuntimeRequest);
+  assert.ok(failedRuntimeRequest);
+  const runtimeReportPath = join(rootPath, 'bruno-results.json');
+  await writeFile(
+    runtimeReportPath,
+    `${JSON.stringify(
+      [
+        {
+          iterationIndex: 0,
+          results: [
+            {
+              name: passedRuntimeRequest.name,
+              path: passedRuntimeRequest.relativePath,
+              status: 'pass',
+            },
+            {
+              error: 'Expected 400 but received 500',
+              name: failedRuntimeRequest.name,
+              path: failedRuntimeRequest.relativePath,
+              status: 'fail',
+            },
+          ],
+        },
+      ],
+      null,
+      2,
+    )}\n`,
+  );
+  const reconciliation = JSON.parse(
+    await callToolText(session.client, 'reconcile_contract_coverage_report', {
+      manifestPath: suite.coverageManifestPath,
+      outputPath: join(rootPath, 'reconciled-coverage.json'),
+      reportFormat: 'bruno-json',
+      reportPath: runtimeReportPath,
+    }),
+  ) as {
+    reconciliation: {
+      summary: {
+        runtime: {
+          failedItems: number;
+          notRunItems: number;
+          passedItems: number;
+          totalItems: number;
+        };
+      };
+    };
+    report: { summary: { failed: number; passed: number; total: number } };
+  };
+  assert.deepEqual(reconciliation.report.summary, {
+    failed: 1,
+    passed: 1,
+    skipped: 0,
+    total: 2,
+  });
+  assert.equal(reconciliation.reconciliation.summary.runtime.passedItems > 0, true);
+  assert.equal(reconciliation.reconciliation.summary.runtime.failedItems > 0, true);
+  assert.equal(reconciliation.reconciliation.summary.runtime.notRunItems > 0, true);
 
   await callToolText(session.client, 'create_environment', {
     collectionPath,

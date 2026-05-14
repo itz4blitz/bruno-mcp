@@ -99,11 +99,19 @@ const sampleContract = {
       },
       Product: {
         type: 'object',
-        required: ['ProductId', 'name'],
+        required: ['ProductId', 'name', 'status', 'tags'],
         properties: {
           ProductId: { type: 'string' },
           name: { type: 'string', minLength: 1, maxLength: 20 },
           price: { type: 'number', minimum: 0, maximum: 1000 },
+          discontinuedAt: { type: 'string', nullable: true, maxLength: 30 },
+          status: { type: 'string', enum: ['active', 'archived'] },
+          tags: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 5,
+            items: { type: 'string', minLength: 2, maxLength: 12 },
+          },
           category: {
             type: 'object',
             properties: {
@@ -186,6 +194,70 @@ test('ContractSuiteScaffolder builds Desktop-ready REST/OData coverage from a co
   const keyRequestSource = await readFile(keyRequest.path, 'utf8');
   assert.match(keyRequestSource, /\/Products\/\{\{Products_id\}\}/);
   assert.match(keyRequestSource, /OData key response identity/);
+  assert.match(keyRequestSource, /response field ProductId has expected schema/);
+  assert.match(keyRequestSource, /expect\(body\)\.to\.have\.nested\.property\("ProductId"\)/);
+  assert.match(keyRequestSource, /expect\(value\)\.to\.be\.a\("string"\)/);
+  assert.match(keyRequestSource, /response field name has expected schema/);
+  assert.match(keyRequestSource, /expect\(value\.length\)\.to\.be\.at\.least\(1\)/);
+  assert.match(keyRequestSource, /expect\(value\.length\)\.to\.be\.at\.most\(20\)/);
+  assert.match(keyRequestSource, /response field price has expected schema/);
+  assert.match(keyRequestSource, /expect\(value\)\.to\.be\.a\("number"\)/);
+  assert.match(keyRequestSource, /expect\(value\)\.to\.be\.at\.least\(0\)/);
+  assert.match(keyRequestSource, /expect\(value\)\.to\.be\.at\.most\(1000\)/);
+  assert.match(keyRequestSource, /response field discontinuedAt has expected schema/);
+  assert.match(keyRequestSource, /if \(value !== undefined && value !== null\)/);
+  assert.match(keyRequestSource, /expect\(value\.length\)\.to\.be\.at\.most\(30\)/);
+  assert.match(keyRequestSource, /response field status has expected schema/);
+  assert.match(keyRequestSource, /expect\(value\)\.to\.be\.oneOf\(\["active","archived"\]\)/);
+  assert.match(keyRequestSource, /response field tags has expected schema/);
+  assert.match(keyRequestSource, /expect\(value\)\.to\.be\.an\("array"\)/);
+  assert.match(keyRequestSource, /expect\(value\.length\)\.to\.be\.at\.least\(1\)/);
+  assert.match(keyRequestSource, /expect\(value\.length\)\.to\.be\.at\.most\(5\)/);
+
+  const listRequest = result.createdRequests.find((request) => request.name === 'Products List');
+  assert.ok(listRequest);
+  const listRequestSource = await readFile(listRequest.path, 'utf8');
+  assert.match(listRequestSource, /response field value\[\]\.ProductId has expected schema/);
+  assert.match(listRequestSource, /Array\.isArray\(body\.value\) && body\.value\.length > 0/);
+
+  const filterRequest = result.createdRequests.find(
+    (request) => request.name === 'Products $filter',
+  );
+  assert.ok(filterRequest);
+  const filterRequestSource = await readFile(filterRequest.path, 'utf8');
+  assert.match(
+    filterRequestSource,
+    /\$filter returns only records matching Products_id when records exist/,
+  );
+  assert.match(
+    filterRequestSource,
+    /const expected = bru\.getEnvVar\("Products_id"\) \|\| bru\.getVar\("Products_id"\);/,
+  );
+  assert.match(
+    filterRequestSource,
+    /expect\(String\(record\["ProductId"\]\)\)\.to\.equal\(String\(expected\)\)/,
+  );
+
+  const orderbyRequest = result.createdRequests.find(
+    (request) => request.name === 'Products $orderby',
+  );
+  assert.ok(orderbyRequest);
+  const orderbyRequestSource = await readFile(orderbyRequest.path, 'utf8');
+  assert.match(
+    orderbyRequestSource,
+    /\$orderby sorts records by ProductId ascending when comparable/,
+  );
+  assert.match(orderbyRequestSource, /const sorted = \[\.\.\.values\]\.sort/);
+  assert.match(orderbyRequestSource, /expect\(values\)\.to\.deep\.equal\(sorted\)/);
+
+  const skipRequest = result.createdRequests.find((request) => request.name === 'Products $skip');
+  assert.ok(skipRequest);
+  const skipRequestSource = await readFile(skipRequest.path, 'utf8');
+  assert.match(skipRequestSource, /\$skip returns a page consistent with one skipped record/);
+  assert.match(
+    skipRequestSource,
+    /expect\(body\.value\.length\)\.to\.be\.at\.most\(Math\.max\(body\["@odata.count"\] - 1, 0\)\)/,
+  );
 
   const manifestSource = await readFile(result.coverageManifestPath, 'utf8');
   assert.match(manifestSource, /odata-query:products:filter/);

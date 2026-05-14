@@ -54,6 +54,7 @@ import { createBrunoNativeManager } from './bruno/native.js';
 import { createConverterManager } from './bruno/converters.js';
 import { createOpenApiContractManager } from './bruno/openapi.js';
 import { createRequestBuilder } from './bruno/request.js';
+import { createBrunoRunReportManager } from './bruno/run-report.js';
 import { BrunoRunInput, createBrunoRunner } from './bruno/runner.js';
 import { createRunnerDataManager } from './bruno/runner-data.js';
 import { createSecretManager } from './bruno/secrets.js';
@@ -261,6 +262,13 @@ const generateContractCoverageManifestToolSchema: ToolSchema = {
 
 const validateContractCoverageManifestToolSchema: ToolSchema = {
   manifestPath: z.string().min(1, 'Manifest path is required'),
+};
+
+const reconcileContractCoverageReportToolSchema: ToolSchema = {
+  manifestPath: z.string().min(1, 'Manifest path is required'),
+  outputPath: z.string().min(1).optional(),
+  reportFormat: z.enum(['bruno-json', 'junit-xml']),
+  reportPath: z.string().min(1, 'Report path is required'),
 };
 
 const auditVariableSourcesToolSchema: ToolSchema = {
@@ -637,6 +645,7 @@ export class BrunoMcpServer {
   private nativeManager;
   private openApiContractManager;
   private requestBuilder;
+  private runReportManager;
   private runnerDataManager;
   private runner;
   private secretManager;
@@ -688,6 +697,7 @@ export class BrunoMcpServer {
     this.contractCoverageManager = createContractCoverageManager();
     this.converterManager = createConverterManager();
     this.requestBuilder = createRequestBuilder();
+    this.runReportManager = createBrunoRunReportManager();
     this.runnerDataManager = createRunnerDataManager();
     this.runner = createBrunoRunner();
     this.secretManager = createSecretManager();
@@ -1205,6 +1215,54 @@ export class BrunoMcpServer {
         } catch (error) {
           return this.errorResult(
             this.getErrorMessage('validating contract coverage manifest', error),
+          );
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'reconcile_contract_coverage_report',
+      {
+        title: 'Reconcile Contract Coverage Report',
+        description:
+          'Ingest a Bruno JSON or JUnit run report and reconcile runtime pass/fail/skip/not-run status against a generated contract coverage manifest.',
+        inputSchema: reconcileContractCoverageReportToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as {
+            manifestPath: string;
+            outputPath?: string;
+            reportFormat: 'bruno-json' | 'junit-xml';
+            reportPath: string;
+          };
+          await this.assertPathAllowed(args.manifestPath, 'Coverage manifest path');
+          await this.assertPathAllowed(args.reportPath, 'Bruno report path');
+          if (args.outputPath) {
+            await this.assertPathAllowed(args.outputPath, 'Reconciled coverage output path');
+          }
+
+          const manifest = await this.contractCoverageManager.readManifest(args.manifestPath);
+          const reportContent = await fs.readFile(args.reportPath, 'utf8');
+          const report =
+            args.reportFormat === 'bruno-json'
+              ? this.runReportManager.parseJsonReport(reportContent)
+              : this.runReportManager.parseJunitReport(reportContent);
+          const reconciliation = this.runReportManager.reconcileCoverage(manifest, report);
+
+          if (args.outputPath) {
+            await fs.mkdir(dirname(args.outputPath), { recursive: true });
+            await fs.writeFile(args.outputPath, `${JSON.stringify(reconciliation, null, 2)}\n`);
+          }
+
+          return this.jsonResult({
+            outputPath: args.outputPath,
+            reconciliation,
+            report,
+          });
+        } catch (error) {
+          return this.errorResult(
+            this.getErrorMessage('reconciling contract coverage report', error),
           );
         }
       },

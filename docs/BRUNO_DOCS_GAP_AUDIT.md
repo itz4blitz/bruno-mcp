@@ -16,6 +16,7 @@ Implemented:
 - Bruno CLI run command generation/execution
 - feature-slice planning, scaffolding, support graphs, run manifests, run classification, and findings capture
 - collection quality/readiness scoring for assertion depth, docs depth, semantic risk, parity risk, product defects, seed gaps, test-infra gaps, and external stubs
+- Bruno JSON/JUnit run-report ingestion and runtime coverage reconciliation
 - CSV/JSON runner data-file authoring with manifest validation
 - strict Bruno assertion/operator validation and request-settings validation
 - Bruno auth support for none, inherit, bearer, basic, OAuth2, API key, digest, AWS SigV4, NTLM, and WSSE
@@ -24,7 +25,7 @@ Implemented:
 
 In progress / next:
 
-- ingesting JSON/JUnit/HTML `bru run` artifacts back into coverage manifests and findings
+- HTML report artifact ingestion and masking audits
 - helper-script and report-artifact parity
 
 Planned:
@@ -54,6 +55,8 @@ Planned:
   - `audit_variable_sources`
 - Added a generic Bruno CLI wrapper:
   - `run_collection`
+- Added Bruno JSON/JUnit run-report reconciliation:
+  - `reconcile_contract_coverage_report`
 
 The running global MCP process must be restarted before newly added tools appear to clients.
 
@@ -61,14 +64,14 @@ The running global MCP process must be restarted before newly added tools appear
 
 These are the current blockers and recently closed parity items for "100% true coverage" generation across arbitrary APIs.
 
-1. Contract-driven suite generation exists for REST/OData, but still needs report reconciliation.
-   The MCP can inspect OpenAPI, model OData-over-OpenAPI denominators, scaffold REST/OData positive and negative request suites, write persisted environments, audit variables, and map generated requests to a coverage manifest. It still needs `bru run` report ingestion to update coverage from actual pass/fail execution.
+1. Contract-driven suite generation exists for REST/OData, with JSON/JUnit report reconciliation.
+   The MCP can inspect OpenAPI, model OData-over-OpenAPI denominators, scaffold REST/OData positive and negative request suites, write persisted environments, audit variables, map generated requests to a coverage manifest, and reconcile Bruno JSON/JUnit run reports into passed/failed/skipped/not-run runtime status. HTML artifact ingestion and richer report masking audits are still separate follow-up work.
 
 2. OData modeling now generates request coverage, but live behavior still decides truth.
    The MCP now has a reusable OData contract model for service roots, `$metadata`, entity sets, key endpoints, query options, navigation properties, matrix requests for `$select`, `$filter`, `$orderby`, `$top`, `$skip`, `$count`, `$expand`, key identity checks, malformed-query checks, and bad-entity-set checks. Generated assertions should be treated as contract-derived minimums and strengthened from observed API behavior when needed.
 
-3. Coverage needs run-report reconciliation.
-   The MCP now generates a coverage denominator manifest for endpoints, methods, query options, payload fields, response fields, scenario classes, seeded variables, and file routes. Audits still need to compare Bruno collection state and `bru run` reports against that manifest and mark covered, uncovered, documented skip, and failing items.
+3. Coverage has run-report reconciliation; findings ingestion is still next.
+   The MCP now generates a coverage denominator manifest for endpoints, methods, query options, payload fields, response fields, scenario classes, seeded variables, and file routes, then reconciles Bruno JSON/JUnit reports against manifest `coveredBy` mappings. It still needs richer conversion of recurrent report failures into durable findings and masking/sensitive-data audits.
 
 4. Seed handling needs a stronger source-of-truth integration.
    The MCP can resolve seed records through a public OData/OpenAPI API and hydrate environment/runtime variables. It still needs generic seed-manifest ingestion and validation so generated suites can prove which variables came from deterministic fixtures. It should never require DB reads for API test data.
@@ -76,11 +79,11 @@ These are the current blockers and recently closed parity items for "100% true c
 5. Desktop variable readiness needs generation enforcement.
    Bruno Desktop direct-request usage needs persisted environment, collection, folder, or request variables. Runtime `bru.setVar()` only exists during a collection run. The MCP now audits every `{{var}}` reference and classifies environment, collection, folder, request, process env, secret manager, prompt, OAuth2, runtime-only, and missing sources. Generators still need to fail or create support artifacts when unresolved Desktop variables remain.
 
-6. Data-driven test generation has a generic data-file layer; report reconciliation is still missing.
-   Bruno supports CSV/JSON runner data files and `bru.runner.iterationData`. The MCP can now author CSV/JSON data files, validate required fields, write run manifests, and emit the exact `bru run --json-file-path` or `--csv-file-path` command. It still needs report ingestion to connect iteration pass/fail back to coverage manifests.
+6. Data-driven test generation has a generic data-file layer and stricter manifest validation.
+   Bruno supports CSV/JSON runner data files and `bru.runner.iterationData`. The MCP can now author CSV/JSON data files, validate required fields, verify manifest file/request existence, compare declared fields and row counts against actual data, write run manifests, and emit the exact `bru run --json-file-path` or `--csv-file-path` command. Iteration-level semantic rollups can still be made richer as report formats evolve.
 
-7. Assertion modeling has docs-backed operator validation; schema-aware assertion generation is still next.
-   The MCP now validates Bruno assertion operators and normalizes documented aliases before writing requests. It still needs richer generated schema-aware assertions that prove every response field type/nullability/enum/length rule from a contract.
+7. Assertion modeling has docs-backed operator validation and schema-aware generated assertions.
+   The MCP now validates Bruno assertion operators, normalizes documented aliases before writing requests, and generates contract-derived response assertions for field presence, type, nullability, enum, numeric bounds, string length, and array cardinality where the OpenAPI/OData contract exposes those constraints. Generated assertions still remain contract-derived; product-specific business invariants belong in overlays or consuming projects.
 
 8. Request settings are validated.
    The MCP now accepts only Bruno-backed request settings: `encodeUrl`, `timeout`, `followRedirects`, and `maxRedirects`, including documented defaults/ranges used by Bruno file storage.
@@ -94,8 +97,8 @@ These are the current blockers and recently closed parity items for "100% true c
 11. Shared script support is missing.
     Bruno supports CommonJS helper files, `additionalContextRoots`, and safe vs developer sandbox behavior. The MCP should scaffold shared JS helpers, configure context roots, and warn when a collection requires `--sandbox=developer`.
 
-12. CLI execution exists, but report ingestion is missing.
-    The MCP now has `run_collection` for `bru run` with `--env`, `--env-file`, `--global-env`, `--workspace-path`, `--env-var`, tags, reporters, sandbox, data files, bail, and parallel options. It still needs first-class parsing of JSON/JUnit/HTML report artifacts into coverage and findings.
+12. CLI execution exists, and JSON/JUnit report ingestion exists.
+    The MCP now has `run_collection` for `bru run` with `--env`, `--env-file`, `--global-env`, `--workspace-path`, `--env-var`, tags, reporters, sandbox, data files, bail, and parallel options. It also parses Bruno JSON/JUnit report artifacts into runtime coverage reconciliation. HTML report parsing and richer failure-to-finding workflows remain follow-up work.
 
 13. Import/export/converter wrappers are implemented.
     The MCP wraps Bruno CLI import for OpenAPI/WSDL and official Bruno converters for Postman, Insomnia, OpenAPI, WSDL, and Bruno export conversion paths.
@@ -150,4 +153,4 @@ For the first consuming API project, use `scaffold_api_contract_suite` as the ge
 - create positive, negative, OData matrix, file dependency, and write-disabled findings,
 - generate a coverage manifest with endpoint/query/payload/schema denominators,
 - audit the generated collection against that manifest,
-- then run with `run_collection` and reconcile the run report once report ingestion is implemented.
+- then run with `run_collection` and reconcile the Bruno JSON/JUnit report with `reconcile_contract_coverage_report`.

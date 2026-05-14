@@ -11,6 +11,7 @@ This is the current logical tool grouping for `bruno-mcp`.
 - `inspect_api_contract`
 - `generate_contract_coverage_manifest`
 - `validate_contract_coverage_manifest`
+- `reconcile_contract_coverage_report`
 - `scaffold_api_contract_suite`
 - `audit_variable_sources`
 - `run_collection`
@@ -46,6 +47,7 @@ This is the current logical tool grouping for `bruno-mcp`.
 - `inspect_api_contract`
 - `generate_contract_coverage_manifest`
 - `validate_contract_coverage_manifest`
+- `reconcile_contract_coverage_report`
 - `scaffold_api_contract_suite`
 - `audit_variable_sources`
 - `run_collection`
@@ -56,6 +58,7 @@ These tools are protocol-adapter foundations for deep API coverage:
 - OData-over-OpenAPI adds service root, `$metadata`, entity set, key lookup, and query-option denominators.
 - Seed manifests contribute required variables without hardcoded IDs.
 - `scaffold_api_contract_suite` builds REST/OData request folders, positive/negative scenarios, min/max JSON payload requests, OData query matrix requests, unsupported-method checks, persisted environments, and coverage mappings.
+- `reconcile_contract_coverage_report` ingests Bruno JSON or JUnit reporter output and marks manifest items as passed, failed, skipped, or not-run based on the requests mapped in `coveredBy`.
 - Variable audits classify Desktop-ready, runtime-only, prompt, process, secret, OAuth2, and missing variables.
 - `run_collection` wraps `bru run` with env, workspace, tag, data-file, reporter, sandbox, and execution flags.
 - `create_runner_data_file` writes CSV/JSON runner data, validates required iteration fields, and optionally writes a run manifest with the exact CLI data-file option.
@@ -74,9 +77,9 @@ Auth generation covers Bruno's current file-backed HTTP auth modes supported by 
 
 - `audit_collection_quality`
 
-`audit_collection_quality` scores whether requests are deeply asserted, not just whether a route was hit. The summary includes `assertionDepthScore`, `assertionDepthCovered`, `assertionDepthTotal`, `assertionPerfectRequests`, `assertionIncompleteRequests`, `docsDepthScore`, `docsMeaningfulRequests`, `docsDecisionGradeRequests`, `semanticRiskScore`, `parityRiskScore`, `productDefectFindings`, `seedDataGapFindings`, `testInfraParityFindings`, `externalStubFindings`, and `enterpriseReadinessScore`. When `includeRequests` is enabled, each request includes its classification, required dimensions, evidence, missing dimensions, semantic risks, parity risks, and documentation quality.
+`audit_collection_quality` scores whether requests are deeply asserted, not just whether a route was hit. The summary includes `assertionDepthScore`, `assertionDepthCovered`, `assertionDepthTotal`, `assertionPerfectRequests`, `assertionIncompleteRequests`, `docsDepthScore`, `docsMeaningfulRequests`, `docsDecisionGradeRequests`, `semanticRiskScore`, `parityRiskScore`, `productDefectFindings`, `seedDataGapFindings`, `testInfraParityFindings`, `externalStubFindings`, and `enterpriseReadinessScore`. When `includeRequests` is enabled, each request includes its classification, required dimensions, executable evidence, missing dimensions, semantic risks, parity risks, and documentation quality.
 
-The assertion-depth model classifies requests as reads, query reads, key reads, mutations, negatives, support/setup, contract docs, and event/file scenarios. Required dimensions vary by classification and include status, content type, response shape, schema fields, seed identity, query semantics, business semantics, side effects, no unexpected side effects, negative envelopes, variable capture, and meaningful docs.
+The assertion-depth model classifies requests as reads, query reads, key reads, mutations, negatives, support/setup, contract docs, and event/file scenarios. Required dimensions vary by classification and include status, content type, response shape, schema fields, seed identity, query semantics, business semantics, side effects, no unexpected side effects, negative envelopes, variable capture, and meaningful docs. Non-doc dimensions must be proven by executable request evidence: tests, Bruno assertions, or scripts. Docs, tags, URLs, and request names can explain intent and classify parity findings, but they do not satisfy assertion depth by themselves.
 
 The documentation-depth model classifies docs as missing, placeholder, thin, meaningful, or decision-grade. A request does not receive the docs assertion dimension just because a `docs {}` block exists; the docs must describe test intent, coverage decision, dependency/risk, or failure interpretation. Thin and placeholder docs reduce `docsDepthScore` and `enterpriseReadinessScore`.
 

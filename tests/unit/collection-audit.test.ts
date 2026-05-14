@@ -430,3 +430,67 @@ test('CollectionAuditManager scores documentation depth beyond docs presence', a
   assert.equal(decision.documentation.quality, 'decision-grade');
   assert.equal(decision.assertionDepth.missingRequired.includes('docs'), false);
 });
+
+test('CollectionAuditManager requires executable evidence for perfect assertion depth', async () => {
+  const rootPath = await mkdtemp(join(tmpdir(), 'bruno-audit-executable-depth-'));
+  const collectionManager = createCollectionManager();
+  const nativeManager = createBrunoNativeManager();
+  const requestBuilder = createRequestBuilder();
+  const auditManager = createCollectionAuditManager(nativeManager);
+
+  const collection = await collectionManager.createCollection({
+    name: 'audit-executable-depth',
+    outputPath: rootPath,
+  });
+
+  assert.equal(collection.success, true);
+  const collectionPath = collection.path as string;
+
+  const weakRequest = await requestBuilder.createRequest({
+    collectionPath,
+    method: 'GET',
+    name: 'Get Seed Projection With Content Type Schema Fields Query Semantics Business Semantics',
+    tests: `test("status is successful", function () {
+  expect(res.getStatus()).to.equal(200);
+});`.split('\n'),
+    url: '{{baseUrl}}/users?$select=id,name&$top=1',
+  });
+  assert.equal(weakRequest.success, true);
+  assert.equal(
+    (
+      await nativeManager.updateRequest(weakRequest.path as string, {
+        docs: 'Coverage decision: this request validates content-type, response shape, schema fields, query semantics, seed identity, business semantics, side effects, no unexpected side effects, negative envelope, and variable capture because those labels document the intended contract and known LocalStack emulator gap parity interpretation.',
+        tags: [
+          'schema-fields',
+          'query-semantics',
+          'seed-identity',
+          'business-semantics',
+          'variable-capture',
+          'no-unexpected-side-effects',
+        ],
+      })
+    ).success,
+    true,
+  );
+
+  const report = await auditManager.auditCollection(collectionPath, {
+    includeRequests: true,
+  });
+
+  const weakSummary = report.requests?.find(
+    (request) => request.url === '{{baseUrl}}/users?$select=id,name&$top=1',
+  );
+  assert.ok(weakSummary);
+  assert.equal(weakSummary.documentation.quality, 'decision-grade');
+  assert.ok(weakSummary.parityRisks.some((risk) => risk.kind === 'emulator-gap'));
+  assert.equal(weakSummary.assertionDepth.percent < 100, true);
+  assert.ok(weakSummary.issues.includes('assertion-depth-incomplete'));
+  assert.deepEqual(
+    weakSummary.assertionDepth.dimensions
+      .filter((dimension) => dimension.present && dimension.key !== 'docs')
+      .map((dimension) => dimension.key),
+    ['status'],
+  );
+  assert.equal(report.summary.assertionPerfectRequests, 0);
+  assert.equal(report.summary.parityRiskFindings, 1);
+});

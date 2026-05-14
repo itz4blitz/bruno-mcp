@@ -436,13 +436,13 @@ export class ContractSuiteScaffolder {
         item.category === 'odata-query-option' &&
         item.endpointId === endpoint.id &&
         item.queryOption === queryOption,
-      docs: this.requestDocs(endpoint, queryOption),
+      docs: this.odataMatrixDocs(endpoint, queryOption, entitySet),
       endpoint,
       folder: `${rootFolder}/odata/${entitySet.name}/matrix`,
       headers: this.headersForEndpoint(endpoint),
       method: 'GET' as const,
       name: `${entitySet.name} ${queryOption}`,
-      query: { [queryOption]: this.odataQueryValue(queryOption, entitySet, endpoint) },
+      query: this.odataQueryParameters(queryOption, entitySet, endpoint),
       scenario: queryOption,
       tags: this.tags(endpoint, 'odata-matrix', entitySet),
       tests: this.odataQueryTests(queryOption, entitySet, endpoint),
@@ -953,6 +953,60 @@ export class ContractSuiteScaffolder {
       lines.push('  expect(body["@odata.count"]).to.be.a("number");');
       lines.push('});');
     }
+    if (queryOption === '$filter') {
+      const keyField = entitySet.keyFields[0] || this.selectFields(endpoint)[0];
+      if (keyField) {
+        const variableName = `${entitySet.name}_id`;
+        lines.push(
+          `test("$filter returns only records matching ${variableName} when records exist", function () {`,
+        );
+        lines.push('  const body = res.getBody();');
+        lines.push(
+          `  const expected = bru.getEnvVar(${JSON.stringify(variableName)}) || bru.getVar(${JSON.stringify(variableName)});`,
+        );
+        lines.push('  if (body.value.length > 0) {');
+        lines.push('    for (const record of body.value) {');
+        lines.push(
+          `      expect(String(record[${JSON.stringify(keyField)}])).to.equal(String(expected));`,
+        );
+        lines.push('    }');
+        lines.push('  }');
+        lines.push('});');
+      }
+    }
+    if (queryOption === '$orderby') {
+      const orderField = entitySet.keyFields[0] || this.selectFields(endpoint)[0];
+      if (orderField) {
+        lines.push(
+          `test("$orderby sorts records by ${orderField} ascending when comparable", function () {`,
+        );
+        lines.push('  const body = res.getBody();');
+        lines.push(
+          `  const values = body.value.map((record) => record[${JSON.stringify(orderField)}]).filter((value) => value !== undefined && value !== null);`,
+        );
+        lines.push('  if (values.length > 1) {');
+        lines.push('    const sorted = [...values].sort((left, right) => {');
+        lines.push('      if (typeof left === "number" && typeof right === "number") {');
+        lines.push('        return left - right;');
+        lines.push('      }');
+        lines.push('      return String(left).localeCompare(String(right));');
+        lines.push('    });');
+        lines.push('    expect(values).to.deep.equal(sorted);');
+        lines.push('  }');
+        lines.push('});');
+      }
+    }
+    if (queryOption === '$skip') {
+      lines.push('test("$skip returns a page consistent with one skipped record", function () {');
+      lines.push('  const body = res.getBody();');
+      lines.push('  if (Object.prototype.hasOwnProperty.call(body, "@odata.count")) {');
+      lines.push('    expect(body["@odata.count"]).to.be.a("number");');
+      lines.push(
+        '    expect(body.value.length).to.be.at.most(Math.max(body["@odata.count"] - 1, 0));',
+      );
+      lines.push('  }');
+      lines.push('});');
+    }
     if (queryOption === '$expand' && entitySet.navigationProperties.length > 0) {
       const property = entitySet.navigationProperties[0]!;
       lines.push(
@@ -1041,18 +1095,210 @@ export class ContractSuiteScaffolder {
       /^2\d\d$/.test(response.statusCode),
     );
     const fields = (successResponse?.fields || [])
-      .filter((field) => field.required && !field.path.includes('[]'))
-      .slice(0, 8);
+      .filter((field) => this.shouldAssertResponseField(field))
+      .slice(0, 14);
     const lines: string[] = [];
 
     for (const field of fields) {
-      lines.push(`test("response includes required field ${field.path}", function () {`);
-      lines.push('  const body = res.getBody();');
-      lines.push(`  expect(body).to.have.nested.property(${JSON.stringify(field.path)});`);
-      lines.push('});');
+      lines.push(...this.responseFieldTest(field));
     }
 
     return lines;
+  }
+
+  private responseFieldTest(field: ApiContractField): string[] {
+    const lines = [`test("response field ${field.path} has expected schema", function () {`];
+    const arrayGuards = this.arrayPathGuards(field.path);
+
+    lines.push('  const body = res.getBody();');
+    if (arrayGuards.length > 0) {
+      lines.push(`  if (${arrayGuards.join(' && ')}) {`);
+      lines.push(`    const value = ${this.optionalPathExpression('body', field.path)};`);
+      lines.push(...this.responseFieldAssertions(field, '    '));
+      lines.push('  }');
+    } else {
+      lines.push(`  const value = ${this.optionalPathExpression('body', field.path)};`);
+      if (field.required && !field.path.includes('@')) {
+        lines.push(`  expect(body).to.have.nested.property(${JSON.stringify(field.path)});`);
+      }
+      lines.push(...this.responseFieldAssertions(field, '  '));
+    }
+    lines.push('});');
+
+    return lines;
+  }
+
+  private responseFieldAssertions(field: ApiContractField, indent: string): string[] {
+    const lines: string[] = [];
+    if (field.required) {
+      lines.push(`${indent}expect(value).to.not.equal(undefined);`);
+    }
+
+    if (field.required && !field.nullable) {
+      lines.push(`${indent}expect(value).to.not.equal(null);`);
+      lines.push(...this.responseFieldTypeAssertions(field, indent));
+      return lines;
+    }
+
+    if (field.required && field.nullable) {
+      lines.push(`${indent}if (value !== null) {`);
+      lines.push(...this.responseFieldTypeAssertions(field, `${indent}  `));
+      lines.push(`${indent}}`);
+      return lines;
+    }
+
+    if (field.nullable) {
+      lines.push(`${indent}if (value !== undefined && value !== null) {`);
+    } else {
+      lines.push(`${indent}if (value !== undefined) {`);
+      lines.push(`${indent}  expect(value).to.not.equal(null);`);
+    }
+    lines.push(...this.responseFieldTypeAssertions(field, `${indent}  `));
+    lines.push(`${indent}}`);
+
+    return lines;
+  }
+
+  private responseFieldTypeAssertions(field: ApiContractField, indent: string): string[] {
+    const lines: string[] = [];
+    switch (field.type) {
+      case 'array':
+        lines.push(`${indent}expect(value).to.be.an("array");`);
+        break;
+      case 'boolean':
+        lines.push(`${indent}expect(value).to.be.a("boolean");`);
+        break;
+      case 'integer':
+        lines.push(`${indent}expect(value).to.be.a("number");`);
+        lines.push(`${indent}expect(Number.isInteger(value)).to.equal(true);`);
+        break;
+      case 'number':
+        lines.push(`${indent}expect(value).to.be.a("number");`);
+        break;
+      case 'object':
+        lines.push(`${indent}expect(value).to.be.an("object");`);
+        break;
+      case 'string':
+      default:
+        lines.push(`${indent}expect(value).to.be.a("string");`);
+        break;
+    }
+
+    if (field.enum && field.enum.length > 0) {
+      lines.push(`${indent}expect(value).to.be.oneOf(${JSON.stringify(field.enum)});`);
+    }
+    if (field.minimum !== undefined) {
+      lines.push(`${indent}expect(value).to.be.at.least(${JSON.stringify(field.minimum)});`);
+    }
+    if (field.maximum !== undefined) {
+      lines.push(`${indent}expect(value).to.be.at.most(${JSON.stringify(field.maximum)});`);
+    }
+    if (field.minLength !== undefined) {
+      lines.push(
+        `${indent}expect(value.length).to.be.at.least(${JSON.stringify(field.minLength)});`,
+      );
+    }
+    if (field.maxLength !== undefined) {
+      lines.push(
+        `${indent}expect(value.length).to.be.at.most(${JSON.stringify(field.maxLength)});`,
+      );
+    }
+    if (field.minItems !== undefined) {
+      lines.push(
+        `${indent}expect(value.length).to.be.at.least(${JSON.stringify(field.minItems)});`,
+      );
+    }
+    if (field.maxItems !== undefined) {
+      lines.push(`${indent}expect(value.length).to.be.at.most(${JSON.stringify(field.maxItems)});`);
+    }
+
+    return lines;
+  }
+
+  private shouldAssertResponseField(field: ApiContractField): boolean {
+    if (field.path === 'value') {
+      return false;
+    }
+    if (field.path.endsWith('[]') && field.type === 'object') {
+      return false;
+    }
+    return (
+      field.required ||
+      field.enum !== undefined ||
+      field.minimum !== undefined ||
+      field.maximum !== undefined ||
+      field.minLength !== undefined ||
+      field.maxLength !== undefined ||
+      field.minItems !== undefined ||
+      field.maxItems !== undefined ||
+      !['object'].includes(field.type)
+    );
+  }
+
+  private arrayPathGuards(path: string): string[] {
+    const guards: string[] = [];
+    let expression = 'body';
+
+    for (const segment of this.responsePathSegments(path)) {
+      const propertyExpression = `${expression}${this.propertyAccessor(segment.property)}`;
+      if (segment.array) {
+        guards.push(`Array.isArray(${propertyExpression})`);
+        guards.push(`${propertyExpression}.length > 0`);
+        expression = `${propertyExpression}[0]`;
+      } else {
+        expression = propertyExpression;
+      }
+    }
+
+    return guards;
+  }
+
+  private optionalPathExpression(root: string, path: string): string {
+    let expression = root;
+    for (const segment of this.responsePathSegments(path)) {
+      expression += this.optionalPropertyAccessor(segment.property);
+      if (segment.array) {
+        expression += '?.[0]';
+      }
+    }
+    return expression;
+  }
+
+  private responsePathSegments(path: string): Array<{ array: boolean; property: string }> {
+    if (path.startsWith('@')) {
+      return [{ array: path.endsWith('[]'), property: path.replace(/\[\]$/, '') }];
+    }
+    return path
+      .split('.')
+      .filter(Boolean)
+      .map((segment) => ({
+        array: segment.endsWith('[]'),
+        property: segment.replace(/\[\]$/, ''),
+      }));
+  }
+
+  private propertyAccessor(property: string): string {
+    return /^[A-Za-z_$][\w$]*$/.test(property) ? `.${property}` : `[${JSON.stringify(property)}]`;
+  }
+
+  private optionalPropertyAccessor(property: string): string {
+    return /^[A-Za-z_$][\w$]*$/.test(property)
+      ? `?.${property}`
+      : `?.[${JSON.stringify(property)}]`;
+  }
+
+  private odataQueryParameters(
+    queryOption: string,
+    entitySet: ODataEntitySetContract,
+    endpoint: ApiContractEndpoint,
+  ): Record<string, boolean | number | string> {
+    const query: Record<string, boolean | number | string> = {
+      [queryOption]: this.odataQueryValue(queryOption, entitySet, endpoint),
+    };
+    if (queryOption === '$skip' && entitySet.queryOptions.includes('$count')) {
+      query.$count = true;
+    }
+    return query;
   }
 
   private odataQueryValue(
@@ -1168,6 +1414,27 @@ export class ContractSuiteScaffolder {
     ]
       .filter((line): line is string => line !== undefined)
       .join('\n');
+  }
+
+  private odataMatrixDocs(
+    endpoint: ApiContractEndpoint,
+    queryOption: string,
+    entitySet: ODataEntitySetContract,
+  ): string {
+    const docs = [this.requestDocs(endpoint, queryOption)];
+    if (queryOption === '$filter') {
+      docs.push(
+        '',
+        `Behavior assertion filters against the ${entitySet.name}_id seed variable. Hydrate that variable with a deterministic record key before live runs when a non-empty filtered result is required.`,
+      );
+    }
+    if (queryOption === '$skip') {
+      docs.push(
+        '',
+        'The generic $skip assertion verifies the strongest contract-derived page invariant available. When $count is supported, this request includes $count=true to compare page length with one skipped record.',
+      );
+    }
+    return docs.join('\n');
   }
 
   private rootFolderDocs(contract: ApiContractIr): string {

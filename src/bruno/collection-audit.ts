@@ -1204,22 +1204,10 @@ export class CollectionAuditManager {
     ]
       .filter(Boolean)
       .join('\n');
-    const docs = request.docs;
-    const context = [
-      request.name,
-      request.relativePath,
-      request.url,
-      request.tags.join('\n'),
-      tests,
-      assertionNames,
-      assertionValues,
-      scripts,
-      docs,
-      this.bodyToText(request),
-    ].join('\n');
+    const executableContext = [tests, assertionNames, assertionValues, scripts].join('\n');
 
     return {
-      'business-semantics': this.matchEvidence(context, [
+      'business-semantics': this.matchEvidence(executableContext, [
         [
           /business|semantic|mapping|plan|scope|tenant|authorizer|gateway|policy|dependency/i,
           'business wording',
@@ -1228,9 +1216,9 @@ export class CollectionAuditManager {
           /persist|created|updated|deleted|sync|reimbursement|invoice|payment|job|event|publish/i,
           'domain effect',
         ],
-        [/identity|same|equals?|matches?|expected|configured|seeded/i, 'expected domain value'],
+        [/identity|same|matches?|expected|configured|seeded/i, 'expected domain value'],
       ]),
-      'content-type': this.matchEvidence(context, [
+      'content-type': this.matchEvidence(executableContext, [
         [/content-type|content type|getHeader\(["']content-type["']\)/i, 'content type check'],
         [
           /application\/json|application\/xml|text\/html|xml through|json through/i,
@@ -1238,7 +1226,7 @@ export class CollectionAuditManager {
         ],
       ]),
       docs: documentation.score >= 70 ? documentation.evidence : [],
-      'negative-envelope': this.matchEvidence(context, [
+      'negative-envelope': this.matchEvidence(executableContext, [
         [
           /error|envelope|message|reject|denied|forbidden|unauthorized|not-found|not found/i,
           'error contract',
@@ -1249,7 +1237,7 @@ export class CollectionAuditManager {
         ],
         [/401|403|404|400|500|4xx|5xx|missing authentication token/i, 'negative status family'],
       ]),
-      'no-unexpected-side-effects': this.matchEvidence(context, [
+      'no-unexpected-side-effects': this.matchEvidence(executableContext, [
         [
           /does not|do not|no .*calls?|without .*call|not create|not update|not return .*mutation/i,
           'absence assertion',
@@ -1260,7 +1248,7 @@ export class CollectionAuditManager {
         ],
         [/does not masquerade|does not create|does not proxy/i, 'route gap guard'],
       ]),
-      'query-semantics': this.matchEvidence(context, [
+      'query-semantics': this.matchEvidence(executableContext, [
         [/\$select|%24select|selected fields?|projection/i, 'select semantics'],
         [/\$filter|%24filter|filter effect|lambda filter/i, 'filter semantics'],
         [/\$orderby|%24orderby|order effect|sorted/i, 'order semantics'],
@@ -1268,7 +1256,7 @@ export class CollectionAuditManager {
         [/\$count|%24count|@odata\.count/i, 'count semantics'],
         [/\$expand|%24expand|expanded navigation|navigation property/i, 'expand semantics'],
       ]),
-      'response-shape': this.matchEvidence(context, [
+      'response-shape': this.matchEvidence(executableContext, [
         [
           /to\.have\.property|have\.keys?|property\(|keys\(|Array\.isArray|array|object/i,
           'shape assertion',
@@ -1277,7 +1265,7 @@ export class CollectionAuditManager {
         [/@odata|\.value\b|body shape|payload|response shape|schema/i, 'payload shape'],
         [/length(?:\.of)?|at\.least|empty|not\.empty/i, 'collection cardinality'],
       ]),
-      'schema-fields': this.matchEvidence(context, [
+      'schema-fields': this.matchEvidence(executableContext, [
         [
           /field|fields|property|properties|required|nullability|null|type|typeof/i,
           'field/type assertion',
@@ -1288,7 +1276,7 @@ export class CollectionAuditManager {
         ],
         [/id\b|identifier|primary key|foreign key|@odata\.id/i, 'identity field'],
       ]),
-      'seed-identity': this.matchEvidence(context, [
+      'seed-identity': this.matchEvidence(executableContext, [
         [/seed|seeded|fixture|resolver|manifest|coverage/i, 'seed source'],
         [
           /\{\{[^}]*_id\}\}|\{\{[^}]*Id\}\}|bru\.(?:getVar|getEnvVar|setVar|setEnvVar)\(/,
@@ -1296,7 +1284,7 @@ export class CollectionAuditManager {
         ],
         [/identity|same id|key identity|live data|real data/i, 'seed identity assertion'],
       ]),
-      'side-effects': this.matchEvidence(context, [
+      'side-effects': this.matchEvidence(executableContext, [
         [
           /created|updated|deleted|mutat|persist|write|publish|published|emits?|sends?|posts?|uploads?|downloads?/i,
           'side effect',
@@ -1307,14 +1295,14 @@ export class CollectionAuditManager {
         ],
         [/call count|captur|request includes|payload contains|writes/i, 'captured dependency call'],
       ]),
-      status: this.matchEvidence(context, [
+      status: this.matchEvidence(executableContext, [
         [
           /res\.(?:status|getStatus\()|response status|status is|status was asserted|res\.status/i,
           'status assertion',
         ],
         [/\bexpect\([^)]*status/i, 'status expectation'],
       ]),
-      'variable-capture': this.matchEvidence(context, [
+      'variable-capture': this.matchEvidence(executableContext, [
         [/bru\.(?:setVar|setEnvVar|getVar|getEnvVar)\(/, 'Bruno variable API'],
         [
           /store|stored|capture|captured|resolver|runtime var|environment variable/i,

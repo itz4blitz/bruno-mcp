@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { createBrunoRunReportManager } from '../../src/bruno/run-report.js';
 import { createTestServer } from '../helpers/http-server.js';
 import { callToolText, createMcpTestClient, REPO_ROOT } from '../helpers/mcp-client.js';
 
@@ -48,11 +49,19 @@ test('generated Bruno collections execute successfully with bru run', async (t) 
 });`,
   });
 
-  const result = await runBru(collectionPath);
+  const reporterJson = join(rootPath, 'bruno-results.json');
+  const result = await runBru(collectionPath, { reporterJson });
 
   assert.equal(result.exitCode, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /ping-request/);
   assert.match(result.stdout, /Passed|pass|PASS/);
+
+  const runReport = createBrunoRunReportManager().parseJsonReport(
+    await readFile(reporterJson, 'utf8'),
+  );
+  assert.equal(runReport.summary.total, 1);
+  assert.equal(runReport.summary.passed, 1);
+  assert.equal(runReport.requests[0]?.status, 'passed');
 });
 
 test('generated GraphQL requests execute successfully with bru run', async (t) => {
@@ -243,14 +252,20 @@ test('dependency-aware suites pass runtime variables between generated requests'
 
 async function runBru(
   collectionPath: string,
+  options: { reporterJson?: string } = {},
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const bruCommand =
     process.platform === 'win32'
       ? join(REPO_ROOT, 'node_modules', '.bin', 'bru.cmd')
       : join(REPO_ROOT, 'node_modules', '.bin', 'bru');
 
+  const args = ['run', '--env', 'test'];
+  if (options.reporterJson) {
+    args.push('--reporter-json', options.reporterJson);
+  }
+
   return new Promise((resolve, reject) => {
-    const child = spawn(bruCommand, ['run', '--env', 'test'], {
+    const child = spawn(bruCommand, args, {
       cwd: collectionPath,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],

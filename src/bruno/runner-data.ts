@@ -2,7 +2,11 @@ import { promises as fs } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { BrunoError, FileOperationResult } from './types.js';
-import { resolveWithinCollection, toRelativeCollectionPath } from './store.js';
+import {
+  detectCollectionFormat,
+  resolveWithinCollection,
+  toRelativeCollectionPath,
+} from './store.js';
 
 export type RunnerDataFormat = 'csv' | 'json';
 export type RunnerDataValue = string | number | boolean | null;
@@ -113,9 +117,26 @@ export class RunnerDataManager {
 
     if (!manifest.collectionPath) {
       errors.push('Manifest collectionPath is required.');
+    } else {
+      try {
+        await detectCollectionFormat(manifest.collectionPath);
+      } catch (error) {
+        errors.push(
+          `Manifest collectionPath does not load as a Bruno collection: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
+      }
     }
 
-    for (const [index, dataFile] of (manifest.dataFiles || []).entries()) {
+    if (!Array.isArray(manifest.dataFiles)) {
+      errors.push('Manifest dataFiles must be an array.');
+    }
+
+    for (const [index, dataFile] of (Array.isArray(manifest.dataFiles)
+      ? manifest.dataFiles
+      : []
+    ).entries()) {
       if (!['csv', 'json'].includes(dataFile.format)) {
         errors.push(`dataFiles[${index}].format must be csv or json.`);
       }
@@ -127,12 +148,70 @@ export class RunnerDataManager {
         dataFile.commandOption !== '--json-file-path'
       ) {
         errors.push(`dataFiles[${index}].commandOption is invalid.`);
+      } else if (dataFile.format === 'csv' && dataFile.commandOption !== '--csv-file-path') {
+        errors.push(
+          `dataFiles[${index}].commandOption must be --csv-file-path for csv data files.`,
+        );
+      } else if (dataFile.format === 'json' && dataFile.commandOption !== '--json-file-path') {
+        errors.push(
+          `dataFiles[${index}].commandOption must be --json-file-path for json data files.`,
+        );
       }
       if (!Array.isArray(dataFile.fields) || dataFile.fields.length === 0) {
         errors.push(`dataFiles[${index}].fields must not be empty.`);
       }
+      if (!Array.isArray(dataFile.requiredFields)) {
+        errors.push(`dataFiles[${index}].requiredFields must be an array.`);
+      } else {
+        for (const [fieldIndex, field] of dataFile.requiredFields.entries()) {
+          if (!Array.isArray(dataFile.fields) || !dataFile.fields.includes(field)) {
+            errors.push(
+              `dataFiles[${index}].requiredFields[${fieldIndex}] "${field}" is not present in fields.`,
+            );
+          }
+        }
+      }
       if (!Number.isInteger(dataFile.rowCount) || dataFile.rowCount < 1) {
         errors.push(`dataFiles[${index}].rowCount must be a positive integer.`);
+      }
+
+      const collectionPath =
+        typeof manifest.collectionPath === 'string' ? manifest.collectionPath : '';
+      const resolvedDataFilePath = collectionPath
+        ? this.resolveManifestPath(
+            collectionPath,
+            dataFile.path,
+            `dataFiles[${index}].path`,
+            errors,
+          )
+        : undefined;
+
+      if (Array.isArray(dataFile.requestPaths)) {
+        for (const [requestIndex, requestPath] of dataFile.requestPaths.entries()) {
+          const resolvedRequestPath = collectionPath
+            ? this.resolveManifestPath(
+                collectionPath,
+                requestPath,
+                `dataFiles[${index}].requestPaths[${requestIndex}]`,
+                errors,
+              )
+            : undefined;
+          if (resolvedRequestPath && !(await this.isFile(resolvedRequestPath))) {
+            errors.push(
+              `dataFiles[${index}].requestPaths[${requestIndex}] does not exist: ${requestPath}.`,
+            );
+          }
+        }
+      } else {
+        errors.push(`dataFiles[${index}].requestPaths must be an array.`);
+      }
+
+      if (resolvedDataFilePath) {
+        if (!(await this.isFile(resolvedDataFilePath))) {
+          errors.push(`dataFiles[${index}].path does not exist: ${dataFile.path}.`);
+        } else if (dataFile.format === 'csv' || dataFile.format === 'json') {
+          await this.validateManifestDataFile(index, resolvedDataFilePath, dataFile, errors);
+        }
       }
     }
 
@@ -141,6 +220,176 @@ export class RunnerDataManager {
       manifest,
       valid: errors.length === 0,
     };
+  }
+
+  private async validateManifestDataFile(
+    index: number,
+    dataFilePath: string,
+    dataFile: RunnerDataManifest['dataFiles'][number],
+    errors: string[],
+  ): Promise<void> {
+    const rows = await this.loadRowsForValidation(index, dataFilePath, dataFile.format, errors);
+    if (!rows) {
+      return;
+    }
+
+    if (Number.isInteger(dataFile.rowCount) && dataFile.rowCount !== rows.length) {
+      errors.push(`dataFiles[${index}].rowCount must match actual row count ${rows.length}.`);
+    }
+
+    const actualFields = this.collectFields(rows);
+    if (Array.isArray(dataFile.fields)) {
+      const declaredFields = [...dataFile.fields].toSorted();
+      if (!this.sameStringSet(declaredFields, actualFields)) {
+        errors.push(
+          `dataFiles[${index}].fields must match actual fields: ${actualFields.join(', ')}.`,
+        );
+      }
+    }
+
+    if (!Array.isArray(dataFile.requiredFields)) {
+      errors.push(`dataFiles[${index}].requiredFields must be an array.`);
+      return;
+    }
+
+    for (const [fieldIndex, field] of dataFile.requiredFields.entries()) {
+      if (!actualFields.includes(field)) {
+        errors.push(
+          `dataFiles[${index}].requiredFields[${fieldIndex}] "${field}" is not present in data file.`,
+        );
+        continue;
+      }
+
+      rows.forEach((row, rowIndex) => {
+        const value = row[field];
+        if (value === undefined || value === null || value === '') {
+          errors.push(
+            `dataFiles[${index}].requiredFields[${fieldIndex}] "${field}" is empty in row ${
+              rowIndex + 1
+            }.`,
+          );
+        }
+      });
+    }
+  }
+
+  private async loadRowsForValidation(
+    index: number,
+    dataFilePath: string,
+    format: RunnerDataFormat,
+    errors: string[],
+  ): Promise<Array<Record<string, RunnerDataValue>> | undefined> {
+    try {
+      const content = await fs.readFile(dataFilePath, 'utf8');
+      if (format === 'json') {
+        const parsed = JSON.parse(content) as unknown;
+        if (!Array.isArray(parsed) || !parsed.every((row) => this.isObjectRow(row))) {
+          errors.push(`dataFiles[${index}].path must contain a JSON array of objects.`);
+          return undefined;
+        }
+        return parsed as Array<Record<string, RunnerDataValue>>;
+      }
+
+      return this.parseCsvRows(content);
+    } catch (error) {
+      errors.push(
+        `dataFiles[${index}].path could not be loaded: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+      return undefined;
+    }
+  }
+
+  private resolveManifestPath(
+    collectionPath: string,
+    value: string,
+    label: string,
+    errors: string[],
+  ): string | undefined {
+    try {
+      return resolveWithinCollection(collectionPath, value);
+    } catch {
+      errors.push(`${label} escapes collection root: ${value}.`);
+      return undefined;
+    }
+  }
+
+  private async isFile(path: string): Promise<boolean> {
+    try {
+      return (await fs.stat(path)).isFile();
+    } catch {
+      return false;
+    }
+  }
+
+  private isObjectRow(value: unknown): value is Record<string, RunnerDataValue> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private sameStringSet(left: string[], right: string[]): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    return left.every((value, index) => value === right[index]);
+  }
+
+  private parseCsvRows(content: string): Array<Record<string, RunnerDataValue>> {
+    const records = this.parseCsvRecords(content);
+    if (records.length === 0) {
+      return [];
+    }
+
+    const [headers, ...rows] = records;
+    return rows
+      .filter((row) => row.some((value) => value !== ''))
+      .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])));
+  }
+
+  private parseCsvRecords(content: string): string[][] {
+    const records: string[][] = [];
+    let field = '';
+    let record: string[] = [];
+    let inQuotes = false;
+
+    for (let index = 0; index < content.length; index += 1) {
+      const char = content[index];
+      const nextChar = content[index + 1];
+
+      if (inQuotes) {
+        if (char === '"' && nextChar === '"') {
+          field += '"';
+          index += 1;
+        } else if (char === '"') {
+          inQuotes = false;
+        } else {
+          field += char;
+        }
+        continue;
+      }
+
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ',') {
+        record.push(field);
+        field = '';
+      } else if (char === '\n') {
+        record.push(field);
+        records.push(record);
+        field = '';
+        record = [];
+      } else if (char !== '\r') {
+        field += char;
+      }
+    }
+
+    if (field !== '' || record.length > 0) {
+      record.push(field);
+      records.push(record);
+    }
+
+    return records;
   }
 
   private validateRows(
