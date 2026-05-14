@@ -132,6 +132,90 @@ test('createRequest supports form-urlencoded bodies and digest auth', async () =
   assert.equal(loaded.auth?.digest?.username, '{{username}}');
 });
 
+test('createRequest supports AWS SigV4, NTLM, WSSE, and API key auth modes', async () => {
+  const rootPath = await import('node:fs/promises').then(({ mkdtemp }) =>
+    mkdtemp(join(tmpdir(), 'bruno-request-')),
+  );
+  const collectionManager = createCollectionManager();
+  const requestBuilder = createRequestBuilder();
+
+  const collection = await collectionManager.createCollection({
+    name: 'request-auth-parity-tests',
+    outputPath: rootPath,
+  });
+
+  assert.equal(collection.success, true);
+  const collectionPath = collection.path as string;
+
+  const aws = await requestBuilder.createRequest({
+    collectionPath,
+    name: 'AWS Signed Request',
+    method: 'GET',
+    url: 'https://execute-api.us-east-1.amazonaws.com/ping',
+    auth: {
+      type: 'aws-sig-v4',
+      config: {
+        accessKeyId: '{{AWS_ACCESS_KEY_ID}}',
+        secretAccessKey: '{{AWS_SECRET_ACCESS_KEY}}',
+        service: 'execute-api',
+        region: 'us-east-1',
+      },
+    },
+  });
+  assert.equal(aws.success, true);
+  assert.match(await readFile(aws.path as string, 'utf8'), /auth:awsv4 \{/);
+
+  const ntlm = await requestBuilder.createRequest({
+    collectionPath,
+    name: 'NTLM Request',
+    method: 'GET',
+    url: 'https://example.com/ntlm',
+    auth: {
+      type: 'ntlm',
+      config: {
+        username: '{{NTLM_USERNAME}}',
+        password: '{{NTLM_PASSWORD}}',
+        domain: '{{NTLM_DOMAIN}}',
+      },
+    },
+  });
+  assert.equal(ntlm.success, true);
+  assert.match(await readFile(ntlm.path as string, 'utf8'), /auth:ntlm \{/);
+
+  const wsse = await requestBuilder.createRequest({
+    collectionPath,
+    name: 'WSSE Request',
+    method: 'GET',
+    url: 'https://example.com/wsse',
+    auth: {
+      type: 'wsse',
+      config: {
+        username: '{{WSSE_USERNAME}}',
+        password: '{{WSSE_PASSWORD}}',
+      },
+    },
+  });
+  assert.equal(wsse.success, true);
+  assert.match(await readFile(wsse.path as string, 'utf8'), /auth:wsse \{/);
+
+  const apiKey = await requestBuilder.createRequest({
+    collectionPath,
+    name: 'API Key Request',
+    method: 'GET',
+    url: 'https://example.com/apikey',
+    auth: {
+      type: 'api-key',
+      config: {
+        key: 'X-API-Key',
+        value: '{{API_KEY}}',
+        placement: 'header',
+      },
+    },
+  });
+  assert.equal(apiKey.success, true);
+  assert.match(await readFile(apiKey.path as string, 'utf8'), /auth:apikey \{/);
+});
+
 test('createRequest supports GraphQL requests and preserves variables', async () => {
   const rootPath = await import('node:fs/promises').then(({ mkdtemp }) =>
     mkdtemp(join(tmpdir(), 'bruno-request-')),

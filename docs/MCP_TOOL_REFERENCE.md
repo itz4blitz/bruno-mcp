@@ -14,6 +14,12 @@ This is the current logical tool grouping for `bruno-mcp`.
 - `scaffold_api_contract_suite`
 - `audit_variable_sources`
 - `run_collection`
+- `create_runner_data_file`
+- `validate_runner_data_manifest`
+- `configure_collection_secrets`
+- `import_collection`
+- `convert_to_bruno_export`
+- `convert_from_bruno_export`
 - `create_request`
 - `add_test_script`
 - `create_test_suite`
@@ -52,6 +58,17 @@ These tools are protocol-adapter foundations for deep API coverage:
 - `scaffold_api_contract_suite` builds REST/OData request folders, positive/negative scenarios, min/max JSON payload requests, OData query matrix requests, unsupported-method checks, persisted environments, and coverage mappings.
 - Variable audits classify Desktop-ready, runtime-only, prompt, process, secret, OAuth2, and missing variables.
 - `run_collection` wraps `bru run` with env, workspace, tag, data-file, reporter, sandbox, and execution flags.
+- `create_runner_data_file` writes CSV/JSON runner data, validates required iteration fields, and optionally writes a run manifest with the exact CLI data-file option.
+- `configure_collection_secrets` writes `.env.sample`, `.gitignore` entries, process-env references, and `vars:secret` entries without committing real secret values.
+- `import_collection`, `convert_to_bruno_export`, and `convert_from_bruno_export` wrap Bruno CLI/converter paths instead of hand-translating import/export formats.
+
+## Request Validation And Bruno Parity
+
+Request creation and update now validate Bruno assertion expressions and request settings before writing files. Supported assertion operators include `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, `contains`, `notContains`, `length`, `matches`, `notMatches`, `startsWith`, `endsWith`, `between`, `isEmpty`, `isNotEmpty`, `isNull`, `isUndefined`, `isDefined`, `isTruthy`, `isFalsy`, `isJson`, `isNumber`, `isString`, `isBoolean`, and `isArray`; `equals` and `notEquals` are normalized to Bruno's stored operators.
+
+Request settings are limited to Bruno-backed settings: `encodeUrl`, `followRedirects`, `maxRedirects`, and `timeout`.
+
+Auth generation covers Bruno's current file-backed HTTP auth modes supported by the local Bruno packages: none, inherit, bearer, basic, OAuth2, API key, digest, AWS SigV4, NTLM, and WSSE. OAuth2 includes PKCE, callback/refresh URLs, token placement, credential placement/id, token source, and auto-fetch/auto-refresh fields.
 
 ## Collection Quality And Assertion Depth
 

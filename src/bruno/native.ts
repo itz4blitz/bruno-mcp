@@ -1,7 +1,19 @@
 import { promises as fs } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 
-import { BodyType, BrunoError, FileOperationResult, HttpMethod, RequestAuthMode } from './types.js';
+import {
+  BodyType,
+  BrunoError,
+  FileOperationResult,
+  HttpMethod,
+  RequestAuthConfig,
+  RequestAuthMode,
+} from './types.js';
+import {
+  normalizeAssertions,
+  normalizeRequestAuth,
+  normalizeRequestSettings,
+} from './request-validation.js';
 import {
   DetectedCollectionFormat,
   createEmptyRequestRoot,
@@ -23,8 +35,12 @@ import {
 
 type VariablePatchValue = string | number | boolean;
 
+export interface EnvironmentOptions {
+  secretVariables?: string[];
+}
+
 export interface RequestDefaultsPatch {
-  auth?: { config?: Record<string, string>; type: RequestAuthMode };
+  auth?: { config?: RequestAuthConfig; type: RequestAuthMode };
   docs?: string;
   headers?: Record<string, string>;
   postResponseScript?: string;
@@ -270,6 +286,7 @@ export class BrunoNativeManager {
     collectionPath: string,
     environmentName: string,
     variables: Record<string, VariablePatchValue>,
+    options: EnvironmentOptions = {},
   ): Promise<FileOperationResult> {
     try {
       const format = await detectCollectionFormat(collectionPath);
@@ -280,7 +297,7 @@ export class BrunoNativeManager {
       );
       await saveEnvironmentDocument(environmentPath, {
         name: environmentName,
-        variables: this.toVariableArray(variables),
+        variables: this.toEnvironmentVariableArray(variables, options.secretVariables || []),
       });
 
       return {
@@ -313,12 +330,31 @@ export class BrunoNativeManager {
     collectionPath: string,
     environmentName: string,
   ): Promise<Record<string, string>> {
+    return (await this.getEnvironmentSummary(collectionPath, environmentName)).variables;
+  }
+
+  async getEnvironmentSummary(
+    collectionPath: string,
+    environmentName: string,
+  ): Promise<{ secretVariables: string[]; variables: Record<string, string> }> {
     const format = await detectCollectionFormat(collectionPath);
     const environmentPath = join(
       format.environmentDirectoryPath,
       `${environmentName}${format.environmentExtension}`,
     );
-    return environmentVariablesToObject(await loadEnvironmentDocument(environmentPath));
+    const document = await loadEnvironmentDocument(environmentPath);
+    const entries = Array.isArray(document.variables) ? document.variables : [];
+
+    return {
+      secretVariables: entries
+        .filter((variable): variable is { enabled?: boolean; name: string; secret?: boolean } =>
+          Boolean(variable && typeof variable === 'object' && 'name' in variable),
+        )
+        .filter((variable) => variable.enabled !== false && variable.secret === true)
+        .map((variable) => variable.name)
+        .toSorted(),
+      variables: environmentVariablesToObject(document),
+    };
   }
 
   async updateEnvironmentVariables(
@@ -326,6 +362,7 @@ export class BrunoNativeManager {
     environmentName: string,
     set: Record<string, VariablePatchValue>,
     unset: string[],
+    options: EnvironmentOptions = {},
   ): Promise<FileOperationResult> {
     try {
       const format = await detectCollectionFormat(collectionPath);
@@ -333,9 +370,16 @@ export class BrunoNativeManager {
         format.environmentDirectoryPath,
         `${environmentName}${format.environmentExtension}`,
       );
-      const variables = environmentVariablesToObject(
-        await loadEnvironmentDocument(environmentPath),
-      );
+      const existingDocument = await loadEnvironmentDocument(environmentPath);
+      const variables = environmentVariablesToObject(existingDocument);
+      const existingSecrets = Array.isArray(existingDocument.variables)
+        ? existingDocument.variables
+            .filter((variable): variable is { name: string; secret?: boolean } =>
+              Boolean(variable && typeof variable === 'object' && 'name' in variable),
+            )
+            .filter((variable) => variable.secret === true)
+            .map((variable) => variable.name)
+        : [];
 
       for (const key of unset) {
         delete variables[key];
@@ -348,7 +392,10 @@ export class BrunoNativeManager {
 
       await saveEnvironmentDocument(environmentPath, {
         name: environmentName,
-        variables: this.toVariableArray(variables),
+        variables: this.toEnvironmentVariableArray(variables, [
+          ...existingSecrets,
+          ...(options.secretVariables || []),
+        ]),
       });
 
       return {
@@ -548,16 +595,12 @@ export class BrunoNativeManager {
     if (patch.settings) {
       nextDocument.settings = {
         ...(nextDocument.settings as Record<string, unknown> | undefined),
-        ...patch.settings,
+        ...normalizeRequestSettings(patch.settings),
       };
     }
 
     if (patch.assertions !== undefined) {
-      request.assertions = patch.assertions.map((assertion) => ({
-        enabled: assertion.enabled !== false,
-        name: assertion.name,
-        value: assertion.value,
-      }));
+      request.assertions = normalizeAssertions(patch.assertions);
     }
 
     return nextDocument;
@@ -565,44 +608,132 @@ export class BrunoNativeManager {
 
   private buildNativeAuth(
     type: RequestAuthMode,
-    config: Record<string, string>,
+    config: RequestAuthConfig,
   ): Record<string, unknown> {
-    switch (type) {
+    const auth = normalizeRequestAuth({ config, type });
+    const normalizedConfig = auth.config || {};
+
+    switch (auth.type) {
       case 'inherit':
         return { mode: 'inherit' };
       case 'bearer':
-        return { bearer: { token: config.token || '' }, mode: 'bearer' };
+        return { bearer: { token: this.configString(normalizedConfig.token) }, mode: 'bearer' };
       case 'basic':
         return {
-          basic: { password: config.password || '', username: config.username || '' },
+          basic: {
+            password: this.configString(normalizedConfig.password),
+            username: this.configString(normalizedConfig.username),
+          },
           mode: 'basic',
         };
       case 'digest':
         return {
-          digest: { password: config.password || '', username: config.username || '' },
+          digest: {
+            password: this.configString(normalizedConfig.password),
+            username: this.configString(normalizedConfig.username),
+          },
           mode: 'digest',
         };
-      case 'api-key':
+      case 'apikey':
         return {
           mode: 'apikey',
           apikey: {
-            in: config.in || 'header',
-            key: config.key || '',
-            value: config.value || '',
+            key: this.configString(normalizedConfig.key),
+            placement: this.configString(
+              normalizedConfig.placement || normalizedConfig.in || 'header',
+            ),
+            value: this.configString(normalizedConfig.value),
           },
         };
       case 'oauth2':
         return {
           mode: 'oauth2',
           oauth2: {
-            accessTokenUrl: config.accessTokenUrl || config.access_token_url || '',
-            authorizationUrl: config.authorizationUrl || config.authorization_url || '',
-            clientId: config.clientId || config.client_id || '',
-            clientSecret: config.clientSecret || config.client_secret || '',
-            grantType: config.grantType || config.grant_type || 'authorization_code',
-            password: config.password || '',
-            scope: config.scope || '',
-            username: config.username || '',
+            accessTokenUrl: this.configString(
+              normalizedConfig.accessTokenUrl || normalizedConfig.access_token_url,
+            ),
+            autoFetchToken: this.configBoolean(
+              normalizedConfig.autoFetchToken || normalizedConfig.auto_fetch_token,
+            ),
+            autoRefreshToken: this.configBoolean(
+              normalizedConfig.autoRefreshToken || normalizedConfig.auto_refresh_token,
+            ),
+            authorizationUrl: this.configString(
+              normalizedConfig.authorizationUrl || normalizedConfig.authorization_url,
+            ),
+            callbackUrl: this.configString(
+              normalizedConfig.callbackUrl || normalizedConfig.callback_url,
+            ),
+            clientId: this.configString(normalizedConfig.clientId || normalizedConfig.client_id),
+            clientSecret: this.configString(
+              normalizedConfig.clientSecret || normalizedConfig.client_secret,
+            ),
+            credentialsId: this.configString(
+              normalizedConfig.credentialsId || normalizedConfig.credentials_id,
+            ),
+            credentialsPlacement: this.configString(
+              normalizedConfig.credentialsPlacement || normalizedConfig.credentials_placement,
+            ),
+            grantType: this.configString(
+              normalizedConfig.grantType || normalizedConfig.grant_type || 'authorization_code',
+            ),
+            password: this.configString(normalizedConfig.password),
+            pkce: this.configBoolean(normalizedConfig.pkce),
+            refreshTokenUrl: this.configString(
+              normalizedConfig.refreshTokenUrl || normalizedConfig.refresh_token_url,
+            ),
+            scope: this.configString(normalizedConfig.scope),
+            state: this.configString(normalizedConfig.state),
+            tokenHeaderPrefix: this.configString(
+              normalizedConfig.tokenHeaderPrefix || normalizedConfig.token_header_prefix,
+            ),
+            tokenPlacement: this.configString(
+              normalizedConfig.tokenPlacement || normalizedConfig.token_placement,
+            ),
+            tokenQueryKey: this.configString(
+              normalizedConfig.tokenQueryKey || normalizedConfig.token_query_key,
+            ),
+            tokenSource: this.configString(
+              normalizedConfig.tokenSource || normalizedConfig.token_source,
+            ),
+            username: this.configString(normalizedConfig.username),
+          },
+        };
+      case 'awsv4':
+        return {
+          awsv4: {
+            accessKeyId: this.configString(
+              normalizedConfig.accessKeyId || normalizedConfig.access_key_id,
+            ),
+            profileName: this.configString(
+              normalizedConfig.profileName || normalizedConfig.profile_name,
+            ),
+            region: this.configString(normalizedConfig.region),
+            secretAccessKey: this.configString(
+              normalizedConfig.secretAccessKey || normalizedConfig.secret_access_key,
+            ),
+            service: this.configString(normalizedConfig.service),
+            sessionToken: this.configString(
+              normalizedConfig.sessionToken || normalizedConfig.session_token,
+            ),
+          },
+          mode: 'awsv4',
+        };
+      case 'ntlm':
+        return {
+          mode: 'ntlm',
+          ntlm: {
+            domain: this.configString(normalizedConfig.domain),
+            password: this.configString(normalizedConfig.password),
+            username: this.configString(normalizedConfig.username),
+          },
+        };
+      case 'wsse':
+        return {
+          mode: 'wsse',
+          wsse: {
+            password: this.configString(normalizedConfig.password),
+            username: this.configString(normalizedConfig.username),
           },
         };
       case 'none':
@@ -808,8 +939,48 @@ export class BrunoNativeManager {
     return Object.entries(variables).map(([name, value]) => ({
       enabled: true,
       name,
+      secret: false,
+      type: 'text',
       value: String(value),
     }));
+  }
+
+  private toEnvironmentVariableArray(
+    variables: Record<string, VariablePatchValue>,
+    secretVariables: string[],
+  ): Array<Record<string, unknown>> {
+    const entries = new Map<string, Record<string, unknown>>();
+    for (const variable of this.toVariableArray(variables)) {
+      entries.set(String(variable.name), variable);
+    }
+
+    for (const name of secretVariables.filter((value) => value.trim().length > 0)) {
+      entries.set(name, {
+        enabled: true,
+        name,
+        secret: true,
+        type: 'text',
+        value: entries.get(name)?.value || '',
+      });
+    }
+
+    return [...entries.values()].toSorted((left, right) =>
+      String(left.name).localeCompare(String(right.name)),
+    );
+  }
+
+  private configString(value: unknown): string {
+    return value === undefined || value === null ? '' : String(value);
+  }
+
+  private configBoolean(value: unknown): boolean | undefined {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    return String(value).toLowerCase() === 'true';
   }
 
   private normalizeTags(value: unknown): string[] {

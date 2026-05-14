@@ -948,11 +948,6 @@ export class FeatureSliceManager {
           `Base payload ref: ${basePayloadRef}`,
         ].join('\n'),
         preRequestScript: this.buildMatrixPreRequestScript(input.basePayload),
-        settings: {
-          featureSliceStrictMatrix: true,
-          featureSliceMatrixMetadataPath: relative(input.collectionPath, metadataFilePath),
-          featureSliceScenarioFilePath: relative(input.collectionPath, scenarioFilePath),
-        },
         tags: [input.sliceId, 'matrix', input.category],
       },
     );
@@ -2176,7 +2171,7 @@ export class FeatureSliceManager {
       for (const field of successResponse.bodyFields
         .filter((entry) => entry.required)
         .slice(0, 5)) {
-        assertions.push({ name: `res.body.${field.name}`, value: 'exists' });
+        assertions.push({ name: `res.body.${field.name}`, value: 'isDefined' });
       }
     }
     return assertions;
@@ -2442,10 +2437,6 @@ export class FeatureSliceManager {
           : [{ name: 'res.status', value: `eq ${request.expectedStatus}` }],
       docs: this.describeCoreRequest(request, plan),
       postResponseScript: request.postResponseScript,
-      settings: {
-        featureSlice: plan.sliceId,
-        strictMode: plan.strictMode,
-      },
       tags: request.tags,
       tests: this.buildStatusTest(request.expectedStatus),
     };

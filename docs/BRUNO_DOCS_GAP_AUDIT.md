@@ -16,13 +16,16 @@ Implemented:
 - Bruno CLI run command generation/execution
 - feature-slice planning, scaffolding, support graphs, run manifests, run classification, and findings capture
 - collection quality/readiness scoring for assertion depth, docs depth, semantic risk, parity risk, product defects, seed gaps, test-infra gaps, and external stubs
+- CSV/JSON runner data-file authoring with manifest validation
+- strict Bruno assertion/operator validation and request-settings validation
+- Bruno auth support for none, inherit, bearer, basic, OAuth2, API key, digest, AWS SigV4, NTLM, and WSSE
+- dotenv and `vars:secret` scaffolding that avoids writing real secret values
+- OpenAPI/WSDL import wrappers and Postman/Insomnia/OpenAPI/WSDL converter wrappers, including Bruno export conversion
 
 In progress / next:
 
 - ingesting JSON/JUnit/HTML `bru run` artifacts back into coverage manifests and findings
-- generic data-file authoring for CSV/JSON runner iterations
-- strict assertion/operator validation and request-settings validation
-- full Bruno auth, secrets, helper-script, and report-artifact parity
+- helper-script and report-artifact parity
 
 Planned:
 
@@ -30,7 +33,6 @@ Planned:
 - gRPC generation
 - WebSocket generation
 - SOAP/WSDL generation
-- import/export/converter wrappers
 - optional sampling-based planning/auditing
 
 ## Fixed During This Pass
@@ -55,9 +57,9 @@ Planned:
 
 The running global MCP process must be restarted before newly added tools appear to clients.
 
-## Remaining High-Priority Gaps
+## High-Priority Coverage Notes
 
-These are the remaining blockers for "100% true coverage" generation across arbitrary APIs.
+These are the current blockers and recently closed parity items for "100% true coverage" generation across arbitrary APIs.
 
 1. Contract-driven suite generation exists for REST/OData, but still needs report reconciliation.
    The MCP can inspect OpenAPI, model OData-over-OpenAPI denominators, scaffold REST/OData positive and negative request suites, write persisted environments, audit variables, and map generated requests to a coverage manifest. It still needs `bru run` report ingestion to update coverage from actual pass/fail execution.
@@ -74,20 +76,20 @@ These are the remaining blockers for "100% true coverage" generation across arbi
 5. Desktop variable readiness needs generation enforcement.
    Bruno Desktop direct-request usage needs persisted environment, collection, folder, or request variables. Runtime `bru.setVar()` only exists during a collection run. The MCP now audits every `{{var}}` reference and classifies environment, collection, folder, request, process env, secret manager, prompt, OAuth2, runtime-only, and missing sources. Generators still need to fail or create support artifacts when unresolved Desktop variables remain.
 
-6. Data-driven test generation is incomplete.
-   Bruno supports CSV/JSON runner data files and `bru.runner.iterationData`. The MCP has strict matrix scaffolding, but it needs a general data-file authoring and run-manifest layer that pairs each request with its data file, validates iteration fields, and emits the exact `bru run --json-file-path` or `--csv-file-path` command.
+6. Data-driven test generation has a generic data-file layer; report reconciliation is still missing.
+   Bruno supports CSV/JSON runner data files and `bru.runner.iterationData`. The MCP can now author CSV/JSON data files, validate required fields, write run manifests, and emit the exact `bru run --json-file-path` or `--csv-file-path` command. It still needs report ingestion to connect iteration pass/fail back to coverage manifests.
 
-7. Assertion modeling still needs full docs-backed validation.
-   The docs define assertion expressions, operators, and values. The MCP audits assertion depth and semantic risk, but request creation still accepts generic `{ name, value }` pairs and should validate/map the full operator set, including type, string, numeric, length, membership, and response-header assertions.
+7. Assertion modeling has docs-backed operator validation; schema-aware assertion generation is still next.
+   The MCP now validates Bruno assertion operators and normalizes documented aliases before writing requests. It still needs richer generated schema-aware assertions that prove every response field type/nullability/enum/length rule from a contract.
 
-8. Request settings are unvalidated.
-   The MCP allows arbitrary settings. It should validate docs-backed settings: `encodeUrl`, `timeout`, `followRedirects`, and `maxRedirects` with documented ranges/defaults.
+8. Request settings are validated.
+   The MCP now accepts only Bruno-backed request settings: `encodeUrl`, `timeout`, `followRedirects`, and `maxRedirects`, including documented defaults/ranges used by Bruno file storage.
 
-9. Auth parity is incomplete.
-   Current auth support covers none/inherit/bearer/basic/oauth2/api-key/digest. Bruno also documents OAuth 1.0, AWS SigV4, NTLM, WSSE in OpenCollection, client certificates, OAuth2 PKCE/system browser, token placement, auto-fetch, auto-refresh, credential IDs, and token reset/access APIs.
+9. Auth parity is implemented for file-backed HTTP auth modes supported by the local Bruno packages.
+   Current auth support covers none/inherit/bearer/basic/oauth2/api-key/digest/AWS SigV4/NTLM/WSSE plus OAuth2 PKCE, callback/refresh URLs, token placement, credential placement/id, token source, auto-fetch, and auto-refresh fields. OAuth 1.0 is not emitted because the installed Bruno file-store/schema packages do not expose a stable OAuth1 auth block.
 
-10. Secret management is missing.
-    The MCP does not generate or audit `.env`, `.env.sample`, `vars:secret`, `secrets.json`, secret manager mappings, secret references, or report-masking risks.
+10. Secret scaffolding is implemented; external secret-manager audits are still missing.
+    The MCP can write `.env.sample`, `.gitignore`, process-env references, and `vars:secret` entries without committing real secret values. It still needs first-class `secrets.json` external secret-manager mapping audits and report-masking verification.
 
 11. Shared script support is missing.
     Bruno supports CommonJS helper files, `additionalContextRoots`, and safe vs developer sandbox behavior. The MCP should scaffold shared JS helpers, configure context roots, and warn when a collection requires `--sandbox=developer`.
@@ -95,8 +97,8 @@ These are the remaining blockers for "100% true coverage" generation across arbi
 12. CLI execution exists, but report ingestion is missing.
     The MCP now has `run_collection` for `bru run` with `--env`, `--env-file`, `--global-env`, `--workspace-path`, `--env-var`, tags, reporters, sandbox, data files, bail, and parallel options. It still needs first-class parsing of JSON/JUnit/HTML report artifacts into coverage and findings.
 
-13. Import/export/converter tools are missing.
-    Bruno documents CLI and converter support for OpenAPI, Postman, Insomnia, and WSDL. The MCP should wrap those flows instead of reimplementing every import path by hand.
+13. Import/export/converter wrappers are implemented.
+    The MCP wraps Bruno CLI import for OpenAPI/WSDL and official Bruno converters for Postman, Insomnia, OpenAPI, WSDL, and Bruno export conversion paths.
 
 14. Protocol generation is incomplete.
     Bruno supports REST, GraphQL, gRPC, WebSocket, and SOAP/WSDL. The MCP currently covers REST/OpenAPI, OData-over-OpenAPI modeling, and GraphQL-over-HTTP requests. It does not yet parse GraphQL schemas/introspection results or generate gRPC, WebSocket, or SOAP/WSDL suites.

@@ -50,6 +50,11 @@ This project is an independent file-native Bruno automation implementation built
 - dependency-aware suite generation using runtime vars
 - CRUD request scaffolding
 - Bruno CLI run command generation/execution
+- CSV/JSON runner data-file authoring with run manifests
+- strict assertion/operator and request-settings validation
+- Bruno auth mode support for none, inherit, bearer, basic, OAuth2, API key, digest, AWS SigV4, NTLM, and WSSE
+- dotenv/`vars:secret` secret scaffolding without writing real secret values
+- OpenAPI/WSDL import wrappers and Postman/Insomnia/OpenAPI/WSDL converter wrappers, including Bruno export conversion
 - variable-source auditing for Desktop and CLI readiness
 
 ### Manage Bruno workspaces and collections
@@ -106,11 +111,11 @@ Statuses describe the generic MCP surface. Product-specific oracles still belong
 | Logging / progress                                                        | Implemented                              |
 | Elicitation                                                               | Implemented                              |
 | Run-report ingestion into coverage manifests                              | Planned / next                           |
-| Data-file authoring and iteration manifest support                        | Planned                                  |
-| Strict assertion/operator validation                                      | Planned                                  |
-| Request settings validation                                               | Planned                                  |
-| Full Bruno auth/secrets parity                                            | Planned                                  |
-| Import/export/converter wrappers                                          | Planned                                  |
+| Data-file authoring and iteration manifest support                        | Implemented                              |
+| Strict assertion/operator validation                                      | Implemented                              |
+| Request settings validation                                               | Implemented                              |
+| Bruno auth/secrets parity                                                 | Implemented                              |
+| Import/export/converter wrappers                                          | Implemented                              |
 | GraphQL-over-HTTP request generation                                      | Implemented                              |
 | GraphQL schema introspection coverage                                     | Planned                                  |
 | gRPC generation                                                           | Planned                                  |
@@ -161,6 +166,12 @@ Runtime-only values still have to come from a run or resolver request. Bruno Des
 - `scaffold_api_contract_suite`
 - `audit_variable_sources`
 - `run_collection`
+- `create_runner_data_file`
+- `validate_runner_data_manifest`
+- `configure_collection_secrets`
+- `import_collection`
+- `convert_to_bruno_export`
+- `convert_from_bruno_export`
 - `create_request`
 - `add_test_script`
 - `create_test_suite`
@@ -464,10 +475,8 @@ npm run verify
 High-value next steps that are not blockers for current use:
 
 - run-report ingestion and reconciliation into coverage manifests
-- data-file authoring and iteration manifest support
-- strict assertion/operator and request-settings validation
-- full Bruno auth and secrets parity
-- import/export/converter wrappers
+- run-report artifact ingestion and masking audits
+- external secret-manager mapping audits
 - GraphQL schema introspection coverage
 - gRPC generation
 - WebSocket generation

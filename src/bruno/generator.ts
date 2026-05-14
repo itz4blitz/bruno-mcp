@@ -144,9 +144,21 @@ export class BruGenerator {
    * Generate auth block
    */
   private generateAuthBlock(auth: BruAuth): string {
-    const lines = [`auth:${auth.type} {`];
+    const authType =
+      auth.type === 'api-key' ? 'apikey' : auth.type === 'aws-sig-v4' ? 'awsv4' : auth.type;
+    const lines = [`auth:${authType} {`];
 
-    switch (auth.type) {
+    switch (authType) {
+      case 'awsv4':
+        if (auth.awsv4) {
+          this.pushOptionalAuthLine(lines, 'accessKeyId', auth.awsv4.accessKeyId);
+          this.pushOptionalAuthLine(lines, 'secretAccessKey', auth.awsv4.secretAccessKey);
+          this.pushOptionalAuthLine(lines, 'sessionToken', auth.awsv4.sessionToken);
+          this.pushOptionalAuthLine(lines, 'service', auth.awsv4.service);
+          this.pushOptionalAuthLine(lines, 'region', auth.awsv4.region);
+          this.pushOptionalAuthLine(lines, 'profileName', auth.awsv4.profileName);
+        }
+        break;
       case 'bearer':
         if (auth.bearer) {
           lines.push(this.indent(`token: ${this.escapeString(auth.bearer.token)}`));
@@ -161,9 +173,17 @@ export class BruGenerator {
       case 'oauth2':
         if (auth.oauth2) {
           lines.push(this.indent(`grant_type: ${auth.oauth2.grantType}`));
+          if (auth.oauth2.callbackUrl) {
+            lines.push(this.indent(`callback_url: ${this.escapeString(auth.oauth2.callbackUrl)}`));
+          }
           if (auth.oauth2.accessTokenUrl) {
             lines.push(
               this.indent(`access_token_url: ${this.escapeString(auth.oauth2.accessTokenUrl)}`),
+            );
+          }
+          if (auth.oauth2.refreshTokenUrl) {
+            lines.push(
+              this.indent(`refresh_token_url: ${this.escapeString(auth.oauth2.refreshTokenUrl)}`),
             );
           }
           if (auth.oauth2.authorizationUrl) {
@@ -179,6 +199,50 @@ export class BruGenerator {
               this.indent(`client_secret: ${this.escapeString(auth.oauth2.clientSecret)}`),
             );
           }
+          if (auth.oauth2.credentialsPlacement) {
+            lines.push(
+              this.indent(
+                `credentials_placement: ${this.escapeString(auth.oauth2.credentialsPlacement)}`,
+              ),
+            );
+          }
+          if (auth.oauth2.credentialsId) {
+            lines.push(
+              this.indent(`credentials_id: ${this.escapeString(auth.oauth2.credentialsId)}`),
+            );
+          }
+          if (auth.oauth2.tokenSource) {
+            lines.push(this.indent(`token_source: ${this.escapeString(auth.oauth2.tokenSource)}`));
+          }
+          if (auth.oauth2.tokenPlacement) {
+            lines.push(
+              this.indent(`token_placement: ${this.escapeString(auth.oauth2.tokenPlacement)}`),
+            );
+          }
+          if (auth.oauth2.tokenHeaderPrefix) {
+            lines.push(
+              this.indent(
+                `token_header_prefix: ${this.escapeString(auth.oauth2.tokenHeaderPrefix)}`,
+              ),
+            );
+          }
+          if (auth.oauth2.tokenQueryKey) {
+            lines.push(
+              this.indent(`token_query_key: ${this.escapeString(auth.oauth2.tokenQueryKey)}`),
+            );
+          }
+          if (auth.oauth2.state) {
+            lines.push(this.indent(`state: ${this.escapeString(auth.oauth2.state)}`));
+          }
+          if (auth.oauth2.pkce !== undefined) {
+            lines.push(this.indent(`pkce: ${String(auth.oauth2.pkce)}`));
+          }
+          if (auth.oauth2.autoFetchToken !== undefined) {
+            lines.push(this.indent(`auto_fetch_token: ${String(auth.oauth2.autoFetchToken)}`));
+          }
+          if (auth.oauth2.autoRefreshToken !== undefined) {
+            lines.push(this.indent(`auto_refresh_token: ${String(auth.oauth2.autoRefreshToken)}`));
+          }
           if (auth.oauth2.scope) {
             lines.push(this.indent(`scope: ${this.escapeString(auth.oauth2.scope)}`));
           }
@@ -190,17 +254,34 @@ export class BruGenerator {
           }
         }
         break;
-      case 'api-key':
+      case 'apikey':
         if (auth.apikey) {
           lines.push(this.indent(`key: ${this.escapeString(auth.apikey.key)}`));
           lines.push(this.indent(`value: ${this.escapeString(auth.apikey.value)}`));
-          lines.push(this.indent(`in: ${auth.apikey.in}`));
+          lines.push(
+            this.indent(`placement: ${auth.apikey.placement || auth.apikey.in || 'header'}`),
+          );
         }
         break;
       case 'digest':
         if (auth.digest) {
           lines.push(this.indent(`username: ${this.escapeString(auth.digest.username)}`));
           lines.push(this.indent(`password: ${this.escapeString(auth.digest.password)}`));
+        }
+        break;
+      case 'ntlm':
+        if (auth.ntlm) {
+          lines.push(this.indent(`username: ${this.escapeString(auth.ntlm.username)}`));
+          lines.push(this.indent(`password: ${this.escapeString(auth.ntlm.password)}`));
+          if (auth.ntlm.domain) {
+            lines.push(this.indent(`domain: ${this.escapeString(auth.ntlm.domain)}`));
+          }
+        }
+        break;
+      case 'wsse':
+        if (auth.wsse) {
+          lines.push(this.indent(`username: ${this.escapeString(auth.wsse.username)}`));
+          lines.push(this.indent(`password: ${this.escapeString(auth.wsse.password)}`));
         }
         break;
     }
@@ -380,7 +461,9 @@ export class BruGenerator {
    * Validate authentication configuration
    */
   private validateAuthConfig(auth: BruAuth): void {
-    switch (auth.type) {
+    const authType =
+      auth.type === 'api-key' ? 'apikey' : auth.type === 'aws-sig-v4' ? 'awsv4' : auth.type;
+    switch (authType) {
       case 'bearer':
         if (!auth.bearer?.token) {
           throw new BruValidationError('Bearer token is required for bearer auth');
@@ -391,7 +474,7 @@ export class BruGenerator {
           throw new BruValidationError('Username and password are required for basic auth');
         }
         break;
-      case 'api-key':
+      case 'apikey':
         if (!auth.apikey?.key || !auth.apikey?.value) {
           throw new BruValidationError('Key and value are required for API key auth');
         }
@@ -406,6 +489,35 @@ export class BruGenerator {
           throw new BruValidationError('Username and password are required for digest auth');
         }
         break;
+      case 'awsv4':
+        if (
+          !auth.awsv4?.profileName &&
+          (!auth.awsv4?.accessKeyId || !auth.awsv4?.secretAccessKey)
+        ) {
+          throw new BruValidationError(
+            'Access key and secret access key are required for AWS SigV4 auth unless profileName is provided',
+          );
+        }
+        if (!auth.awsv4?.service || !auth.awsv4?.region) {
+          throw new BruValidationError('Service and region are required for AWS SigV4 auth');
+        }
+        break;
+      case 'ntlm':
+        if (!auth.ntlm?.username || !auth.ntlm?.password) {
+          throw new BruValidationError('Username and password are required for NTLM auth');
+        }
+        break;
+      case 'wsse':
+        if (!auth.wsse?.username || !auth.wsse?.password) {
+          throw new BruValidationError('Username and password are required for WSSE auth');
+        }
+        break;
+    }
+  }
+
+  private pushOptionalAuthLine(lines: string[], key: string, value?: string): void {
+    if (value) {
+      lines.push(this.indent(`${key}: ${this.escapeString(value)}`));
     }
   }
 

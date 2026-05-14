@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 export interface BrunoRunInput {
   bail?: boolean;
   cacert?: string;
+  clientCertConfig?: string;
   collectionPath: string;
   csvFilePath?: string;
   delay?: number;
@@ -58,6 +59,7 @@ export class BrunoRunner {
     this.pushStringOption(args, '--reporter-junit', input.reporterJunit);
     this.pushStringOption(args, '--reporter-html', input.reporterHtml);
     this.pushStringOption(args, '--cacert', input.cacert);
+    this.pushStringOption(args, '--client-cert-config', input.clientCertConfig);
     this.pushNumberOption(args, '--iteration-count', input.iterationCount);
     this.pushNumberOption(args, '--delay', input.delay);
     this.pushCsvOption(args, '--tags', input.tags);

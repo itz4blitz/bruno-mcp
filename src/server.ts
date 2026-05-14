@@ -51,9 +51,12 @@ import {
   SupportRequestRole,
 } from './bruno/feature-slice.js';
 import { createBrunoNativeManager } from './bruno/native.js';
+import { createConverterManager } from './bruno/converters.js';
 import { createOpenApiContractManager } from './bruno/openapi.js';
 import { createRequestBuilder } from './bruno/request.js';
 import { BrunoRunInput, createBrunoRunner } from './bruno/runner.js';
+import { createRunnerDataManager } from './bruno/runner-data.js';
+import { createSecretManager } from './bruno/secrets.js';
 import { createVariableAuditManager } from './bruno/variable-audit.js';
 import { createWorkspaceManager } from './bruno/workspace.js';
 import {
@@ -65,6 +68,7 @@ import {
   CreateTestSuiteInput,
   FileOperationResult,
   HttpMethod,
+  RequestAuthConfig,
   RequestAuthMode,
 } from './bruno/types.js';
 
@@ -72,8 +76,31 @@ type ToolSchema = Record<string, z.ZodTypeAny>;
 const MCP_LIST_PAGE_SIZE = 10;
 const EMPTY_OBJECT_JSON_SCHEMA = { type: 'object' } as const;
 
-const METHOD_VALUES = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
-const AUTH_VALUES = ['none', 'inherit', 'bearer', 'basic', 'oauth2', 'api-key', 'digest'] as const;
+const METHOD_VALUES = [
+  'GET',
+  'POST',
+  'PUT',
+  'DELETE',
+  'PATCH',
+  'HEAD',
+  'OPTIONS',
+  'TRACE',
+  'CONNECT',
+] as const;
+const AUTH_VALUES = [
+  'none',
+  'inherit',
+  'bearer',
+  'basic',
+  'oauth2',
+  'api-key',
+  'apikey',
+  'digest',
+  'aws-sig-v4',
+  'awsv4',
+  'ntlm',
+  'wsse',
+] as const;
 const EXTRA_ROOTS_ENV = 'BRUNO_MCP_EXTRA_ROOTS';
 const BODY_VALUES = [
   'none',
@@ -113,7 +140,7 @@ const requestBodySchema = z.object({
 
 const requestAuthSchema = z.object({
   type: z.enum(AUTH_VALUES),
-  config: z.record(z.string()).optional(),
+  config: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
 });
 
 const requestAssertionSchema = z.object({
@@ -136,6 +163,7 @@ const createEnvironmentToolSchema: ToolSchema = {
   collectionPath: z.string().min(1, 'Collection path is required'),
   name: z.string().min(1, 'Environment name is required'),
   variables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  secretVariables: z.array(z.string().min(1)).optional(),
 };
 
 const createRequestToolSchema: ToolSchema = {
@@ -242,6 +270,7 @@ const auditVariableSourcesToolSchema: ToolSchema = {
 const runCollectionToolSchema: ToolSchema = {
   bail: z.boolean().optional(),
   cacert: z.string().optional(),
+  clientCertConfig: z.string().optional(),
   collectionPath: z.string().min(1, 'Collection path is required'),
   csvFilePath: z.string().optional(),
   delay: z.number().int().nonnegative().optional(),
@@ -266,6 +295,55 @@ const runCollectionToolSchema: ToolSchema = {
   targets: z.array(z.string()).optional(),
   testsOnly: z.boolean().optional(),
   workspacePath: z.string().optional(),
+};
+
+const runnerDataValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+const createRunnerDataFileToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  filePath: z.string().min(1, 'Data file path is required'),
+  format: z.enum(['json', 'csv']),
+  manifestPath: z.string().min(1).optional(),
+  requestPaths: z.array(z.string().min(1)).optional(),
+  requiredFields: z.array(z.string().min(1)).optional(),
+  rows: z.array(z.record(runnerDataValueSchema)).min(1, 'At least one data row is required'),
+};
+
+const validateRunnerDataManifestToolSchema: ToolSchema = {
+  manifestPath: z.string().min(1, 'Manifest path is required'),
+};
+
+const configureCollectionSecretsToolSchema: ToolSchema = {
+  collectionPath: z.string().min(1, 'Collection path is required'),
+  environmentName: z.string().min(1).optional(),
+  processEnvVariables: z.array(z.string().min(1)).optional(),
+  sampleValues: z.record(z.string()).optional(),
+  secretVariables: z.array(z.string().min(1)).optional(),
+  updateGitignore: z.boolean().optional(),
+};
+
+const importCollectionToolSchema: ToolSchema = {
+  collectionFormat: z.enum(['bru', 'opencollection']).optional(),
+  collectionName: z.string().optional(),
+  dryRun: z.boolean().optional(),
+  groupBy: z.enum(['tags', 'path']).optional(),
+  insecure: z.boolean().optional(),
+  output: z.string().optional(),
+  outputFile: z.string().optional(),
+  source: z.string().min(1, 'Import source is required'),
+  type: z.enum(['openapi', 'wsdl']),
+};
+
+const convertToBrunoExportToolSchema: ToolSchema = {
+  outputFile: z.string().min(1, 'Output file is required'),
+  source: z.string().min(1, 'Source file is required'),
+  type: z.enum(['postman', 'insomnia', 'openapi', 'wsdl']),
+};
+
+const convertFromBrunoExportToolSchema: ToolSchema = {
+  outputFile: z.string().min(1, 'Output file is required'),
+  source: z.string().min(1, 'Source Bruno export file is required'),
+  target: z.enum(['postman', 'opencollection']),
 };
 
 const scaffoldApiContractSuiteToolSchema: ToolSchema = {
@@ -375,6 +453,7 @@ const updateEnvironmentToolSchema: ToolSchema = {
   collectionPath: z.string().min(1, 'Collection path is required'),
   environmentName: z.string().min(1, 'Environment name is required'),
   variables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  secretVariables: z.array(z.string().min(1)).optional(),
   set: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
   unset: z.array(z.string()).optional(),
 };
@@ -383,6 +462,7 @@ const desktopEnvironmentToolSchema: ToolSchema = {
   collectionPath: z.string().min(1, 'Collection path is required'),
   environmentName: z.string().min(1, 'Environment name is required'),
   variables: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  secretVariables: z.array(z.string().min(1)).optional(),
   mirrorToCollectionVars: z.boolean().optional(),
 };
 
@@ -552,11 +632,14 @@ export class BrunoMcpServer {
   private collectionManager;
   private contractCoverageManager;
   private contractSuiteScaffolder;
+  private converterManager;
   private featureSliceManager;
   private nativeManager;
   private openApiContractManager;
   private requestBuilder;
+  private runnerDataManager;
   private runner;
+  private secretManager;
   private variableAuditManager;
   private workspaceManager;
   private taskStore: InMemoryTaskStore;
@@ -603,8 +686,11 @@ export class BrunoMcpServer {
     this.nativeManager = createBrunoNativeManager();
     this.collectionAuditManager = createCollectionAuditManager(this.nativeManager);
     this.contractCoverageManager = createContractCoverageManager();
+    this.converterManager = createConverterManager();
     this.requestBuilder = createRequestBuilder();
+    this.runnerDataManager = createRunnerDataManager();
     this.runner = createBrunoRunner();
+    this.secretManager = createSecretManager();
     this.variableAuditManager = createVariableAuditManager(this.nativeManager);
     this.contractSuiteScaffolder = createContractSuiteScaffolder(
       this.requestBuilder,
@@ -639,6 +725,9 @@ export class BrunoMcpServer {
     this.setupContractCoverageTools();
     this.setupApiContractSuiteTool();
     this.setupRunCollectionTool();
+    this.setupRunnerDataTools();
+    this.setupSecretTools();
+    this.setupConverterTools();
     this.setupWorkspaceTools();
     this.setupCollectionDefaultsTools();
     this.setupFolderTools();
@@ -692,6 +781,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as CreateEnvironmentInput & {
+            secretVariables?: string[];
             variables?: Record<string, boolean | number | string>;
           };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
@@ -699,6 +789,7 @@ export class BrunoMcpServer {
             args.collectionPath,
             args.name,
             args.variables || {},
+            { secretVariables: args.secretVariables || [] },
           );
 
           return result.success
@@ -745,7 +836,7 @@ export class BrunoMcpServer {
             };
             auth?: {
               type: RequestAuthMode;
-              config?: Record<string, string>;
+              config?: RequestAuthConfig;
             };
             query?: Record<string, string | number | boolean>;
             folder?: string;
@@ -1153,7 +1244,7 @@ export class BrunoMcpServer {
       async (rawArgs) => {
         try {
           const args = rawArgs as {
-            auth?: { config?: Record<string, string>; type: RequestAuthMode };
+            auth?: { config?: RequestAuthConfig; type: RequestAuthMode };
             baseUrl?: string;
             baseUrlVariable?: string;
             collectionPath: string;
@@ -1211,6 +1302,141 @@ export class BrunoMcpServer {
           return this.jsonResult(result);
         } catch (error) {
           return this.errorResult(this.getErrorMessage('running Bruno collection', error));
+        }
+      },
+    );
+  }
+
+  private setupRunnerDataTools(): void {
+    this.server.registerTool(
+      'create_runner_data_file',
+      {
+        title: 'Create Runner Data File',
+        description:
+          'Create a Bruno CSV or JSON runner data file and optional run manifest for data-driven collection runs.',
+        inputSchema: createRunnerDataFileToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as Parameters<typeof this.runnerDataManager.createDataFile>[0];
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.runnerDataManager.createDataFile(args);
+          return this.jsonResult(result);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('creating runner data file', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'validate_runner_data_manifest',
+      {
+        title: 'Validate Runner Data Manifest',
+        description: 'Validate a Bruno runner data manifest generated by create_runner_data_file.',
+        inputSchema: validateRunnerDataManifestToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as { manifestPath: string };
+          await this.assertPathAllowed(args.manifestPath, 'Runner data manifest path');
+          return this.jsonResult(await this.runnerDataManager.validateManifest(args.manifestPath));
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('validating runner data manifest', error));
+        }
+      },
+    );
+  }
+
+  private setupSecretTools(): void {
+    this.server.registerTool(
+      'configure_collection_secrets',
+      {
+        title: 'Configure Collection Secrets',
+        description:
+          'Create dotenv samples, gitignore entries, and optional Bruno environment secret/process-env references without writing real secret values.',
+        inputSchema: configureCollectionSecretsToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as Parameters<
+            typeof this.secretManager.configureCollectionSecrets
+          >[0];
+          await this.assertPathAllowed(args.collectionPath, 'Collection path');
+          const result = await this.secretManager.configureCollectionSecrets(args);
+          return result.success
+            ? this.jsonResult(result)
+            : this.errorResult(`Failed to configure collection secrets: ${result.error}`);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('configuring collection secrets', error));
+        }
+      },
+    );
+  }
+
+  private setupConverterTools(): void {
+    this.server.registerTool(
+      'import_collection',
+      {
+        title: 'Import Collection',
+        description:
+          'Wrap Bruno CLI import for OpenAPI or WSDL sources, with dry-run command generation support.',
+        inputSchema: importCollectionToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as Parameters<typeof this.converterManager.importCollection>[0];
+          await this.assertImportPathsAllowed(args);
+          return this.jsonResult(await this.converterManager.importCollection(args));
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('importing collection', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'convert_to_bruno_export',
+      {
+        title: 'Convert To Bruno Export',
+        description:
+          'Use official Bruno converters to convert Postman, Insomnia, OpenAPI, or WSDL sources into a Bruno export JSON file.',
+        inputSchema: convertToBrunoExportToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as Parameters<typeof this.converterManager.convertToBrunoExport>[0];
+          await this.assertPathAllowed(args.source, 'Converter source path');
+          await this.assertPathAllowed(args.outputFile, 'Converter output file path');
+          const result = await this.converterManager.convertToBrunoExport(args);
+          return result.success
+            ? this.jsonResult(result)
+            : this.errorResult(`Failed to convert collection: ${result.error}`);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('converting collection', error));
+        }
+      },
+    );
+
+    this.server.registerTool(
+      'convert_from_bruno_export',
+      {
+        title: 'Convert From Bruno Export',
+        description:
+          'Use official Bruno converters to convert a Bruno export JSON file into Postman or OpenCollection JSON.',
+        inputSchema: convertFromBrunoExportToolSchema,
+      },
+      async (rawArgs) => {
+        try {
+          const args = rawArgs as Parameters<
+            typeof this.converterManager.convertFromBrunoExport
+          >[0];
+          await this.assertPathAllowed(args.source, 'Bruno export source path');
+          await this.assertPathAllowed(args.outputFile, 'Converted export output path');
+          const result = await this.converterManager.convertFromBrunoExport(args);
+          return result.success
+            ? this.jsonResult(result)
+            : this.errorResult(`Failed to convert Bruno export: ${result.error}`);
+        } catch (error) {
+          return this.errorResult(this.getErrorMessage('converting Bruno export', error));
         }
       },
     );
@@ -1804,6 +2030,7 @@ export class BrunoMcpServer {
           const args = rawArgs as {
             collectionPath: string;
             environmentName: string;
+            secretVariables?: string[];
             variables?: Record<string, string | number | boolean>;
             set?: Record<string, string | number | boolean>;
             unset?: string[];
@@ -1818,6 +2045,7 @@ export class BrunoMcpServer {
             args.environmentName,
             set,
             args.unset || [],
+            { secretVariables: args.secretVariables || [] },
           );
           return result.success
             ? this.textResult(`Updated environment ${args.environmentName}`)
@@ -1868,6 +2096,7 @@ export class BrunoMcpServer {
             collectionPath: string;
             environmentName: string;
             mirrorToCollectionVars?: boolean;
+            secretVariables?: string[];
             variables?: Record<string, string | number | boolean>;
           };
           await this.assertPathAllowed(args.collectionPath, 'Collection path');
@@ -1876,6 +2105,7 @@ export class BrunoMcpServer {
             args.collectionPath,
             args.environmentName,
             variables,
+            { secretVariables: args.secretVariables || [] },
           );
           if (!environmentResult.success) {
             return this.errorResult(`Failed to configure environment: ${environmentResult.error}`);
@@ -3056,7 +3286,7 @@ Prefer:
     };
     auth?: {
       type: RequestAuthMode;
-      config?: Record<string, string>;
+      config?: RequestAuthConfig;
     };
     query?: Record<string, string | number | boolean>;
     folder?: string;
@@ -3200,6 +3430,7 @@ Prefer:
 
     for (const [description, path] of [
       ['Environment file path', input.envFile],
+      ['Client certificate config path', input.clientCertConfig],
       ['CSV data file path', input.csvFilePath],
       ['JSON data file path', input.jsonFilePath],
       ['HTML reporter path', input.reporterHtml],
@@ -3214,10 +3445,29 @@ Prefer:
     }
   }
 
+  private async assertImportPathsAllowed(input: {
+    output?: string;
+    outputFile?: string;
+    source: string;
+  }): Promise<void> {
+    if (!URL.canParse(input.source)) {
+      await this.assertPathAllowed(input.source, 'Import source path');
+    }
+
+    if (input.output) {
+      await this.assertPathAllowed(input.output, 'Import output path');
+    }
+
+    if (input.outputFile) {
+      await this.assertPathAllowed(input.outputFile, 'Import output file path');
+    }
+  }
+
   private async upsertEnvironment(
     collectionPath: string,
     environmentName: string,
     variables: Record<string, string | number | boolean>,
+    options: { secretVariables?: string[] } = {},
   ): Promise<FileOperationResult> {
     const existingEnvironments = await this.nativeManager.listEnvironments(collectionPath);
     if (existingEnvironments.includes(environmentName)) {
@@ -3226,10 +3476,16 @@ Prefer:
         environmentName,
         variables,
         [],
+        options,
       );
     }
 
-    return this.nativeManager.createEnvironment(collectionPath, environmentName, variables);
+    return this.nativeManager.createEnvironment(
+      collectionPath,
+      environmentName,
+      variables,
+      options,
+    );
   }
 
   private async resolveODataSeedVariables(args: {
@@ -3848,7 +4104,7 @@ Prefer:
 
   private toDefaultsPatch(args: Record<string, unknown>) {
     return {
-      auth: args.auth as { config?: Record<string, string>; type: RequestAuthMode } | undefined,
+      auth: args.auth as { config?: RequestAuthConfig; type: RequestAuthMode } | undefined,
       docs: args.docs as string | undefined,
       headers: args.headers as Record<string, string> | undefined,
       postResponseScript: args.postResponseScript as string | undefined,
@@ -3870,7 +4126,7 @@ Prefer:
       assertions: args.assertions as
         | Array<{ enabled?: boolean; name: string; value: string }>
         | undefined,
-      auth: args.auth as { config?: Record<string, string>; type: RequestAuthMode } | undefined,
+      auth: args.auth as { config?: RequestAuthConfig; type: RequestAuthMode } | undefined,
       body: args.body as
         | {
             content?: string;

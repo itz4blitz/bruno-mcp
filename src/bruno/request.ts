@@ -17,9 +17,11 @@ import {
   CreateRequestInput,
   FileOperationResult,
   HttpMethod,
+  RequestAuthConfig,
   RequestAuthMode,
 } from './types.js';
 import { generateBruFile } from './generator.js';
+import { normalizeRequestAuth } from './request-validation.js';
 
 type ParsedValue = string | number | boolean;
 type ParsedBlock = {
@@ -27,7 +29,17 @@ type ParsedBlock = {
   content: string;
 };
 
-const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+const HTTP_METHODS: HttpMethod[] = [
+  'GET',
+  'POST',
+  'PUT',
+  'DELETE',
+  'PATCH',
+  'HEAD',
+  'OPTIONS',
+  'TRACE',
+  'CONNECT',
+];
 const HTTP_METHOD_BLOCKS = HTTP_METHODS.map((method) => method.toLowerCase());
 
 export class RequestBuilder {
@@ -302,6 +314,7 @@ export class RequestBuilder {
    * Build BRU file structure from input
    */
   private buildBruFile(input: CreateRequestInput): BruFile {
+    const normalizedAuth = input.auth ? normalizeRequestAuth(input.auth) : undefined;
     const bruFile: BruFile = {
       meta: {
         name: input.name,
@@ -312,7 +325,7 @@ export class RequestBuilder {
         method: input.method,
         url: input.url,
         body: input.body?.type || 'none',
-        auth: input.auth?.type || 'inherit',
+        auth: normalizedAuth?.type || 'inherit',
       },
     };
 
@@ -329,9 +342,9 @@ export class RequestBuilder {
       bruFile.body = body;
     }
 
-    const auth = this.buildBruAuth(input.auth);
-    if (auth) {
-      bruFile.auth = auth;
+    const bruAuth = this.buildBruAuth(input.auth);
+    if (bruAuth) {
+      bruFile.auth = bruAuth;
     }
 
     if (input.script?.['pre-request'] || input.script?.['post-response']) {
@@ -578,30 +591,8 @@ export class RequestBuilder {
   /**
    * Validate authentication configuration
    */
-  private validateAuthConfig(authType: AuthType, config: Record<string, string>): void {
-    switch (authType) {
-      case 'bearer':
-        if (!config.token) {
-          throw new BrunoError('Bearer token is required', 'VALIDATION_ERROR');
-        }
-        break;
-      case 'basic':
-      case 'digest':
-        if (!config.username || !config.password) {
-          throw new BrunoError('Username and password are required', 'VALIDATION_ERROR');
-        }
-        break;
-      case 'api-key':
-        if (!config.key || !config.value) {
-          throw new BrunoError('Key and value are required for API key auth', 'VALIDATION_ERROR');
-        }
-        break;
-      case 'oauth2':
-        if (!config.grantType && !config.grant_type) {
-          throw new BrunoError('grantType is required for oauth2 auth', 'VALIDATION_ERROR');
-        }
-        break;
-    }
+  private validateAuthConfig(authType: AuthType, config: RequestAuthConfig): void {
+    normalizeRequestAuth({ config, type: authType });
   }
 
   /**
@@ -648,52 +639,144 @@ export class RequestBuilder {
       return undefined;
     }
 
-    const config = input.config || {};
+    const normalizedAuth = normalizeRequestAuth(input);
+    const config = normalizedAuth.config || {};
 
     const auth: BruAuth = {
-      type: input.type,
+      type: normalizedAuth.type as AuthType,
     };
 
-    switch (input.type) {
+    switch (normalizedAuth.type) {
       case 'bearer':
         auth.bearer = {
-          token: config.token || '{{token}}',
+          token: this.toConfigString(config.token, '{{token}}'),
         };
         break;
       case 'basic':
         auth.basic = {
-          username: config.username || '{{username}}',
-          password: config.password || '{{password}}',
+          username: this.toConfigString(config.username, '{{username}}'),
+          password: this.toConfigString(config.password, '{{password}}'),
         };
         break;
       case 'oauth2':
         auth.oauth2 = {
-          grantType: this.toGrantType(config.grantType || config.grant_type),
-          accessTokenUrl: config.accessTokenUrl || config.access_token_url,
-          authorizationUrl: config.authorizationUrl || config.authorization_url,
-          clientId: config.clientId || config.client_id,
-          clientSecret: config.clientSecret || config.client_secret,
-          scope: config.scope,
-          username: config.username,
-          password: config.password,
+          grantType: this.toGrantType(this.toConfigString(config.grantType || config.grant_type)),
+          accessTokenUrl: this.toOptionalConfigString(
+            config.accessTokenUrl || config.access_token_url,
+          ),
+          authorizationUrl: this.toOptionalConfigString(
+            config.authorizationUrl || config.authorization_url,
+          ),
+          refreshTokenUrl: this.toOptionalConfigString(
+            config.refreshTokenUrl || config.refresh_token_url,
+          ),
+          callbackUrl: this.toOptionalConfigString(config.callbackUrl || config.callback_url),
+          clientId: this.toOptionalConfigString(config.clientId || config.client_id),
+          clientSecret: this.toOptionalConfigString(config.clientSecret || config.client_secret),
+          credentialsId: this.toOptionalConfigString(config.credentialsId || config.credentials_id),
+          credentialsPlacement: this.toOptionalConfigString(
+            config.credentialsPlacement || config.credentials_placement,
+          ),
+          tokenSource: this.toOptionalConfigString(config.tokenSource || config.token_source),
+          tokenPlacement: this.toOptionalConfigString(
+            config.tokenPlacement || config.token_placement,
+          ),
+          tokenHeaderPrefix: this.toOptionalConfigString(
+            config.tokenHeaderPrefix || config.token_header_prefix,
+          ),
+          tokenQueryKey: this.toOptionalConfigString(
+            config.tokenQueryKey || config.token_query_key,
+          ),
+          state: this.toOptionalConfigString(config.state),
+          pkce: this.toOptionalBoolean(config.pkce),
+          autoFetchToken: this.toOptionalBoolean(config.autoFetchToken || config.auto_fetch_token),
+          autoRefreshToken: this.toOptionalBoolean(
+            config.autoRefreshToken || config.auto_refresh_token,
+          ),
+          scope: this.toOptionalConfigString(config.scope),
+          username: this.toOptionalConfigString(config.username),
+          password: this.toOptionalConfigString(config.password),
         };
         break;
-      case 'api-key':
+      case 'apikey':
         auth.apikey = {
-          key: config.key || 'X-API-Key',
-          value: config.value || '{{apiKey}}',
-          in: (config.in as 'header' | 'query') || 'header',
+          key: this.toConfigString(config.key, 'X-API-Key'),
+          value: this.toConfigString(config.value, '{{apiKey}}'),
+          placement: this.toPlacement(config.placement || config.in),
         };
         break;
       case 'digest':
         auth.digest = {
-          username: config.username || '{{username}}',
-          password: config.password || '{{password}}',
+          username: this.toConfigString(config.username, '{{username}}'),
+          password: this.toConfigString(config.password, '{{password}}'),
+        };
+        break;
+      case 'awsv4':
+        auth.awsv4 = {
+          accessKeyId: this.toOptionalConfigString(config.accessKeyId || config.access_key_id),
+          secretAccessKey: this.toOptionalConfigString(
+            config.secretAccessKey || config.secret_access_key,
+          ),
+          sessionToken: this.toOptionalConfigString(config.sessionToken || config.session_token),
+          service: this.toOptionalConfigString(config.service),
+          region: this.toOptionalConfigString(config.region),
+          profileName: this.toOptionalConfigString(config.profileName || config.profile_name),
+        };
+        break;
+      case 'ntlm':
+        auth.ntlm = {
+          username: this.toConfigString(config.username, '{{username}}'),
+          password: this.toConfigString(config.password, '{{password}}'),
+          domain: this.toOptionalConfigString(config.domain),
+        };
+        break;
+      case 'wsse':
+        auth.wsse = {
+          username: this.toConfigString(config.username, '{{username}}'),
+          password: this.toConfigString(config.password, '{{password}}'),
         };
         break;
     }
 
     return auth;
+  }
+
+  private toConfigString(value: unknown, fallback = ''): string {
+    if (value === undefined || value === null) {
+      return fallback;
+    }
+    return String(value);
+  }
+
+  private toOptionalConfigString(value: unknown): string | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    return String(value);
+  }
+
+  private toOptionalBoolean(value: unknown): boolean | undefined {
+    if (value === undefined || value === null || value === '') {
+      return undefined;
+    }
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    return String(value).toLowerCase() === 'true';
+  }
+
+  private toPlacement(value: unknown): 'header' | 'query' {
+    return value === 'query' ? 'query' : 'header';
+  }
+
+  private normalizeAuthMode(value: RequestAuthMode): RequestAuthMode {
+    if (value === 'api-key') {
+      return 'apikey';
+    }
+    if (value === 'aws-sig-v4') {
+      return 'awsv4';
+    }
+    return value;
   }
 
   /**
@@ -779,15 +862,16 @@ export class RequestBuilder {
       return undefined;
     }
 
-    const authBlock = this.getBlock(blocks, `auth:${authType}`);
+    const normalizedAuthType = this.normalizeAuthMode(authType) as AuthType;
+    const authBlock = this.getBlock(blocks, `auth:${normalizedAuthType}`);
     if (!authBlock) {
       return undefined;
     }
 
     const fields = this.parseStringRecord(authBlock.content);
-    const auth: BruAuth = { type: authType };
+    const auth: BruAuth = { type: normalizedAuthType };
 
-    switch (authType) {
+    switch (normalizedAuthType) {
       case 'bearer':
         auth.bearer = { token: fields.token || '{{token}}' };
         break;
@@ -802,22 +886,59 @@ export class RequestBuilder {
           grantType: this.toGrantType(fields.grant_type || fields.grantType),
           accessTokenUrl: fields.access_token_url || fields.accessTokenUrl,
           authorizationUrl: fields.authorization_url || fields.authorizationUrl,
+          refreshTokenUrl: fields.refresh_token_url || fields.refreshTokenUrl,
+          callbackUrl: fields.callback_url || fields.callbackUrl,
           clientId: fields.client_id || fields.clientId,
           clientSecret: fields.client_secret || fields.clientSecret,
+          credentialsId: fields.credentials_id || fields.credentialsId,
+          credentialsPlacement: fields.credentials_placement || fields.credentialsPlacement,
+          tokenSource: fields.token_source || fields.tokenSource,
+          tokenPlacement: fields.token_placement || fields.tokenPlacement,
+          tokenHeaderPrefix: fields.token_header_prefix || fields.tokenHeaderPrefix,
+          tokenQueryKey: fields.token_query_key || fields.tokenQueryKey,
+          state: fields.state,
+          pkce: this.toOptionalBoolean(fields.pkce),
+          autoFetchToken: this.toOptionalBoolean(fields.auto_fetch_token || fields.autoFetchToken),
+          autoRefreshToken: this.toOptionalBoolean(
+            fields.auto_refresh_token || fields.autoRefreshToken,
+          ),
           scope: fields.scope,
           username: fields.username,
           password: fields.password,
         };
         break;
-      case 'api-key':
+      case 'apikey':
         auth.apikey = {
           key: fields.key || 'X-API-Key',
           value: fields.value || '{{apiKey}}',
-          in: (fields.in as 'header' | 'query') || 'header',
+          placement: (fields.placement || fields.in) === 'query' ? 'query' : 'header',
         };
         break;
       case 'digest':
         auth.digest = {
+          username: fields.username || '{{username}}',
+          password: fields.password || '{{password}}',
+        };
+        break;
+      case 'awsv4':
+        auth.awsv4 = {
+          accessKeyId: fields.accessKeyId || fields.access_key_id,
+          secretAccessKey: fields.secretAccessKey || fields.secret_access_key,
+          sessionToken: fields.sessionToken || fields.session_token,
+          service: fields.service,
+          region: fields.region,
+          profileName: fields.profileName || fields.profile_name,
+        };
+        break;
+      case 'ntlm':
+        auth.ntlm = {
+          username: fields.username || '{{username}}',
+          password: fields.password || '{{password}}',
+          domain: fields.domain,
+        };
+        break;
+      case 'wsse':
+        auth.wsse = {
           username: fields.username || '{{username}}',
           password: fields.password || '{{password}}',
         };
@@ -1082,13 +1203,35 @@ export class RequestBuilder {
           },
         };
       case 'api-key':
+      case 'apikey':
         return {
-          type: 'api-key',
-          config: { key: 'X-API-Key', value: '{{apiKey}}', in: 'header' },
+          type: 'apikey',
+          config: { key: 'X-API-Key', value: '{{apiKey}}', placement: 'header' },
         };
       case 'digest':
         return {
           type: 'digest',
+          config: { username: '{{username}}', password: '{{password}}' },
+        };
+      case 'aws-sig-v4':
+      case 'awsv4':
+        return {
+          type: 'awsv4',
+          config: {
+            accessKeyId: '{{AWS_ACCESS_KEY_ID}}',
+            secretAccessKey: '{{AWS_SECRET_ACCESS_KEY}}',
+            service: 'execute-api',
+            region: '{{AWS_REGION}}',
+          },
+        };
+      case 'ntlm':
+        return {
+          type: 'ntlm',
+          config: { username: '{{username}}', password: '{{password}}', domain: '{{domain}}' },
+        };
+      case 'wsse':
+        return {
+          type: 'wsse',
           config: { username: '{{username}}', password: '{{password}}' },
         };
     }
@@ -1097,10 +1240,13 @@ export class RequestBuilder {
   /**
    * Normalize OAuth grant types.
    */
-  private toGrantType(value?: string): 'authorization_code' | 'client_credentials' | 'password' {
+  private toGrantType(
+    value?: string,
+  ): 'authorization_code' | 'client_credentials' | 'password' | 'implicit' {
     switch (value) {
       case 'client_credentials':
       case 'password':
+      case 'implicit':
         return value;
       default:
         return 'authorization_code';

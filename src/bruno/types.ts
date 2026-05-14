@@ -3,10 +3,32 @@
  * Based on the Bru markup language specification
  */
 
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
+export type HttpMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'DELETE'
+  | 'PATCH'
+  | 'HEAD'
+  | 'OPTIONS'
+  | 'TRACE'
+  | 'CONNECT';
 
-export type AuthType = 'none' | 'bearer' | 'basic' | 'oauth2' | 'api-key' | 'digest';
+export type AuthType =
+  | 'none'
+  | 'bearer'
+  | 'basic'
+  | 'oauth2'
+  | 'api-key'
+  | 'apikey'
+  | 'digest'
+  | 'aws-sig-v4'
+  | 'awsv4'
+  | 'ntlm'
+  | 'wsse';
 export type RequestAuthMode = AuthType | 'inherit';
+export type RequestAuthConfigValue = string | number | boolean | null;
+export type RequestAuthConfig = Record<string, RequestAuthConfigValue>;
 
 export type BodyType =
   | 'none'
@@ -60,11 +82,23 @@ export interface BruAuth {
     password: string;
   };
   oauth2?: {
-    grantType: 'authorization_code' | 'client_credentials' | 'password';
+    grantType: 'authorization_code' | 'client_credentials' | 'password' | 'implicit';
     accessTokenUrl?: string;
     authorizationUrl?: string;
+    refreshTokenUrl?: string;
+    callbackUrl?: string;
     clientId?: string;
     clientSecret?: string;
+    credentialsId?: string;
+    credentialsPlacement?: string;
+    tokenSource?: string;
+    tokenPlacement?: string;
+    tokenHeaderPrefix?: string;
+    tokenQueryKey?: string;
+    state?: string;
+    pkce?: boolean;
+    autoFetchToken?: boolean;
+    autoRefreshToken?: boolean;
     scope?: string;
     username?: string;
     password?: string;
@@ -72,9 +106,27 @@ export interface BruAuth {
   apikey?: {
     key: string;
     value: string;
-    in: 'header' | 'query';
+    in?: 'header' | 'query';
+    placement?: 'header' | 'query';
   };
   digest?: {
+    username: string;
+    password: string;
+  };
+  awsv4?: {
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    sessionToken?: string;
+    service?: string;
+    region?: string;
+    profileName?: string;
+  };
+  ntlm?: {
+    username: string;
+    password: string;
+    domain?: string;
+  };
+  wsse?: {
     username: string;
     password: string;
   };
@@ -172,7 +224,7 @@ export interface CreateRequestInput {
   };
   auth?: {
     type: RequestAuthMode;
-    config?: Record<string, string>;
+    config?: RequestAuthConfig;
   };
   query?: Record<string, string | number | boolean>;
   folder?: string;
@@ -234,7 +286,7 @@ export interface CreateTestSuiteInput {
     };
     auth?: {
       type: AuthType;
-      config: Record<string, string>;
+      config: RequestAuthConfig;
     };
     query?: Record<string, string | number | boolean>;
     folder?: string;

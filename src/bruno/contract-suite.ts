@@ -15,13 +15,19 @@ import {
 import { BrunoNativeManager } from './native.js';
 import { RequestBuilder } from './request.js';
 import { toRelativeCollectionPath } from './store.js';
-import { BodyType, FileOperationResult, HttpMethod, RequestAuthMode } from './types.js';
+import {
+  BodyType,
+  FileOperationResult,
+  HttpMethod,
+  RequestAuthConfig,
+  RequestAuthMode,
+} from './types.js';
 import { VariableAuditManager, VariableSourceAuditReport } from './variable-audit.js';
 
 type VariableValue = boolean | number | string;
 
 export interface ContractSuiteScaffoldInput {
-  auth?: { config?: Record<string, string>; type: RequestAuthMode };
+  auth?: { config?: RequestAuthConfig; type: RequestAuthMode };
   baseUrl?: string;
   baseUrlVariable?: string;
   collectionPath: string;
